@@ -24,8 +24,8 @@ import {
   Boxes
 } from 'lucide-react';
 import { listProducts, applyMovement, getStockMapForDeposit } from '../src/domain_old/repositories';
-import { db } from '../domain/db';
-import { Produto, SaldoEstoque, MovimentoEstoque } from '../domain/types';
+import { db } from '../src/domain/db';
+import { Produto, SaldoEstoque, MovimentoEstoque } from '../src/domain/types';
 
 interface InventoryCountModuleProps {
   onClose: () => void;

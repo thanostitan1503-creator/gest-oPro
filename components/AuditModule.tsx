@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, FileClock, Search, Filter, Calendar, AlertCircle } from 'lucide-react';
-import { MovimentoEstoque } from '../domain/types';
-import { supabase } from '../domain/supabaseClient';
+import { MovimentoEstoque } from '../src/domain/types';
+import { supabase } from '../src/domain/supabaseClient';
 import { GlobalStatsDashboard } from '../src/components/Audit/GlobalStatsDashboard';
 import { normalizeDepositId } from '../src/domain_old/utils/dataSanitizer';
 

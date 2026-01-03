@@ -3,9 +3,9 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X, ChevronRight, ArrowLeft, Info } from 'lucide-react';
-import { Produto } from '../domain/types';
-import { generateId } from '../domain/db';
-import { createProduct, updateProduct, upsertPricing, applyMovement, getBalance } from '../domain/repositories';
+import { Produto } from '../src/domain/types';
+import { generateId } from '../src/domain/db';
+import { createProduct, updateProduct, upsertPricing, applyMovement, getBalance } from '../src/domain/repositories';
 
 type Step = 'definition' | 'pricing';
 

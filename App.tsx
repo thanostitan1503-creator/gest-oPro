@@ -23,16 +23,16 @@ import { LoginScreen } from './components/LoginScreen';
 import { DriverPanel } from './components/DriverPanel'; 
 import { GasRobot } from './components/GasRobot';
 import { OpeningShiftModal } from './components/OpeningShiftModal';
-import { Colaborador, UserRole } from './domain/types';
-import { THEMES, ThemeId } from './domain/themes';
+import { Colaborador, UserRole } from './src/domain/types';
+import { THEMES, ThemeId } from './src/domain/themes';
 import {
   initStorage,
   getThemeBackgroundImage,
   getThemeBackgroundOpacity,
   setThemeBackgroundImage,
   setThemeBackgroundOpacity,
-} from './domain/storage';
-import { supabase } from './domain/supabaseClient';
+} from './src/domain/storage';
+import { supabase } from './src/domain/supabaseClient';
 import { startAutoSync } from './src/domain_old/sync/syncService';
 import { syncAllFromSupabase } from './src/domain_old/sync/syncPull';
 import { ShiftProvider, useShift } from './src/contexts/ShiftContext';

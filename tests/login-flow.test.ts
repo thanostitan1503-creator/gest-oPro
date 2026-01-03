@@ -10,10 +10,10 @@
  */
 
 import './setup';
-import { db, generateId } from '../domain/db';
-import { upsertEmployee, listEmployees } from '../domain/repositories/employees.repo';
-import { upsertDeposit } from '../domain/repositories/deposits.repo';
-import type { Colaborador, Deposito } from '../domain/types';
+import { db, generateId } from '../src/domain/db';
+import { upsertEmployee, listEmployees } from '../src/domain/repositories/employees.repo';
+import { upsertDeposit } from '../src/domain/repositories/deposits.repo';
+import type { Colaborador, Deposito } from '../src/domain/types';
 
 const colors = {
   reset: '\x1b[0m',

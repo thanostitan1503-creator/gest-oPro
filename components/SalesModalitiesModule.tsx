@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Plus, Pencil, Trash2, Search, Settings, Smartphone, CheckCircle2, Banknote
 } from 'lucide-react';
-import { Maquininha, DepositoFisicoId } from '../domain/types';
+import { Maquininha, DepositoFisicoId } from '../src/domain/types';
 import { PaymentMethod } from '../src/types';
-import { Deposit } from '../domain/types';
+import { Deposit } from '../src/domain/types';
 import {
   deleteMachine,
   deletePaymentMethod,

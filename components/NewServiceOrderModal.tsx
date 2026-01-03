@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { X } from 'lucide-react';
-import { db, generateId } from '../domain/db';
-import { getEmployees } from '../domain/storage';
-import { enqueueOutboxEvent } from '../domain/sync/outbox';
+import { db, generateId } from '../src/domain/db';
+import { getEmployees } from '../src/domain/storage';
+import { enqueueOutboxEvent } from '../src/domain/sync/outbox';
 // IMPORTANTE: Importando o componente que acabamos de criar
 import { ServiceOrderItems } from './ServiceOrderItems'; 
 

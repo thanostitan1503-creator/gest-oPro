@@ -13,7 +13,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { NewClientModal } from './NewClientModal';
 import { ServiceOrderItems } from './ServiceOrderItems';
-import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '../domain/types';
+import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '../src/domain/types';
 import { PaymentMethod } from '../src/types';
 import {
   listClients,
@@ -27,10 +27,10 @@ import {
   listPaymentMethods,
   listEmployees,
 } from '../src/domain_old/repositories';
-import { db } from '../domain/db';
+import { db } from '../src/domain/db';
 import { normalizeDepositId } from '../src/domain_old/utils/dataSanitizer';
-import { createDeliveryJobFromOS } from '../domain/delivery.logic';
-import { getEmployees } from '../domain/storage';
+import { createDeliveryJobFromOS } from '../src/domain/delivery.logic';
+import { getEmployees } from '../src/domain/storage';
 
 const getSessionUserName = () => {
   if (typeof localStorage === 'undefined') return null;

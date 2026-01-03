@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Colaborador, DeliveryJob } from '../domain/types';
+import { Colaborador, DeliveryJob } from '../src/domain/types';
 import { listDeliveryJobsByDriver } from '../src/domain_old/repositories';
 import { DriverWaitingModule } from './DriverWaitingModule';
 import { DriverCurrentDeliveryModule } from './DriverCurrentDeliveryModule';

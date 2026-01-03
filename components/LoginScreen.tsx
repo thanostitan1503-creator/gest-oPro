@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { Cylinder, Lock, User, ArrowRight, Loader2, Save, Factory, Wifi, WifiOff } from 'lucide-react';
-import { listEmployees, upsertEmployee } from '../domain/repositories/employees.repo';
-import { upsertDeposit } from '../domain/repositories/deposits.repo';
-import { Colaborador, Deposito } from '../domain/types';
+import { listEmployees, upsertEmployee } from '../src/domain/repositories/employees.repo';
+import { upsertDeposit } from '../src/domain/repositories/deposits.repo';
+import { Colaborador, Deposito } from '../src/domain/types';
 import { DASHBOARD_ITEMS } from '../constants';
-import { supabase } from '../domain/supabaseClient';
-import { db } from '../domain/db';
+import { supabase } from '../src/domain/supabaseClient';
+import { db } from '../src/domain/db';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: Colaborador) => void;

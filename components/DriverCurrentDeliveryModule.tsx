@@ -4,10 +4,10 @@ import {
   MapPin, Phone, User, CheckCircle2, Navigation, AlertTriangle, 
   ChevronRight, Package, DollarSign, ArrowLeft
 } from 'lucide-react';
-import { Colaborador, DeliveryJob } from '../domain/types';
+import { Colaborador, DeliveryJob } from '../src/domain/types';
 import { listDeliveryJobsByDriver } from '../src/domain_old/repositories';
-import { updateDriverHeartbeat } from '../domain/driverPresence.logic';
-import { startRoute, completeJob, cancelJob } from '../domain/delivery.logic';
+import { updateDriverHeartbeat } from '../src/domain/driverPresence.logic';
+import { startRoute, completeJob, cancelJob } from '../src/domain/delivery.logic';
 
 interface DriverCurrentDeliveryModuleProps {
   currentUser: Colaborador;

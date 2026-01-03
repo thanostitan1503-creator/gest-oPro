@@ -12,18 +12,18 @@ import {
   X, Truck, Map as MapIcon, Flame, Activity, MapPin, Plus, Trash2, Search
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { getOrders, getDriverLocations } from '../domain/storage';
-import { OrdemServico, DriverLocation } from '../domain/types';
-import { db } from '../domain/db';
+import { getOrders, getDriverLocations } from '../src/domain/storage';
+import { OrdemServico, DriverLocation } from '../src/domain/types';
+import { db } from '../src/domain/db';
 import { 
   upsertDeliveryZone,
   deleteDeliveryZone,
   upsertDeliverySector,
   deleteDeliverySector,
   moveDeliverySector,
-} from '../domain/repositories/deliveryZones.repo';
-import { upsertZonePricing } from '../domain/repositories/zonePricing.repo';
-import { upsertDeposit } from '../domain/repositories/deposits.repo';
+} from '../src/domain/repositories/deliveryZones.repo';
+import { upsertZonePricing } from '../src/domain/repositories/zonePricing.repo';
+import { upsertDeposit } from '../src/domain/repositories/deposits.repo';
 
 type LatLngTuple = [number, number];
 type LatLngPolygon = LatLngTuple[][];

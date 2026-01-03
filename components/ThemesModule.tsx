@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { X, Palette, Check, Image, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { THEMES, ThemeId } from '../domain/themes';
+import { THEMES, ThemeId } from '../src/domain/themes';
 
 interface ThemesModuleProps {
   onClose: () => void;

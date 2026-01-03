@@ -5,10 +5,10 @@ import {
   Power, BellRing, DollarSign, Package,
   CheckCircle2, XCircle
 } from 'lucide-react';
-import { Colaborador, DeliveryJob, DriverStatus } from '../domain/types';
+import { Colaborador, DeliveryJob, DriverStatus } from '../src/domain/types';
 import { listDeliveryJobs } from '../src/domain_old/repositories';
-import { updateDriverHeartbeat } from '../domain/driverPresence.logic';
-import { acceptJob, refuseJob } from '../domain/delivery.logic';
+import { updateDriverHeartbeat } from '../src/domain/driverPresence.logic';
+import { acceptJob, refuseJob } from '../src/domain/delivery.logic';
 
 // Som de Bip Digital (Curto e Alto)
 const ALERT_SOUND = "data:audio/mp3;base64,//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../../domain/db';
+import { db } from '../../src/domain/db';
 
 export type SystemAlert = {
   id: string;

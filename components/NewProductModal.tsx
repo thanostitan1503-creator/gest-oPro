@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { FC } from 'react';
 import { X, Plus, Package, Calculator, ChevronDown, Box } from 'lucide-react';
-import { Produto, StockMovementRule, TipoProduto } from '../domain/types';
+import { Produto, StockMovementRule, TipoProduto } from '../src/domain/types';
 
 interface Props {
   isOpen: boolean;

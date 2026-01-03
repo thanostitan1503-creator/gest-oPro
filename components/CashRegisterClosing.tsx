@@ -5,8 +5,8 @@ import {
   Calendar, DollarSign, ArrowRight, Banknote,
   TrendingUp, AlertTriangle
 } from 'lucide-react';
-import { getOrders, getProducts } from '../domain/storage';
-import { OrdemServico } from '../domain/types';
+import { getOrders, getProducts } from '../src/domain/storage';
+import { OrdemServico } from '../src/domain/types';
 
 interface CashRegisterClosingProps {
   onClose: () => void;

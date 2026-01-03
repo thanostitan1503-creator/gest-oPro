@@ -10,8 +10,8 @@ import {
 import { 
   Cliente, ClientePreco, ClienteDescontoPendente, 
   UserRole, DepositoFisicoId, ModalidadeItem 
-} from '../domain/types';
-import { db } from '../domain/db';
+} from '../src/domain/types';
+import { db } from '../src/domain/db';
 
 import {
   listClients,

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { FC } from 'react';
 import { X, Plus, ChevronDown, ChevronUp, Check } from 'lucide-react';
-import { Produto, StockMovementRule, TipoProduto, ProductPricing } from '../domain/types';
-import { bulkUpsertPricing, getPricingByProduct, listExchangeRulesByProduct, getBalance } from '../domain/repositories';
-import { generateId, db } from '../domain/db';
+import { Produto, StockMovementRule, TipoProduto, ProductPricing } from '../src/domain/types';
+import { bulkUpsertPricing, getPricingByProduct, listExchangeRulesByProduct, getBalance } from '../src/domain/repositories';
+import { generateId, db } from '../src/domain/db';
 
 interface DepositPricing {
   depositoId: string;

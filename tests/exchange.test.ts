@@ -9,12 +9,12 @@
  */
 
 import './setup'; // Configurar fake-indexeddb
-import { db, generateId } from '../domain/db';
-import { createProduct, listProducts } from '../domain/repositories/products.repo';
-import { upsertServiceOrder } from '../domain/repositories/serviceOrders.repo';
-import { applyMovement, getStockQty } from '../domain/repositories/stock.repo';
-import { calcularMovimentosEstoque } from '../domain/stock.logic';
-import type { Produto, OrdemServico, MovimentoEstoque } from '../domain/types';
+import { db, generateId } from '../src/domain/db';
+import { createProduct, listProducts } from '../src/domain/repositories/products.repo';
+import { upsertServiceOrder } from '../src/domain/repositories/serviceOrders.repo';
+import { applyMovement, getStockQty } from '../src/domain/repositories/stock.repo';
+import { calcularMovimentosEstoque } from '../src/domain/stock.logic';
+import type { Produto, OrdemServico, MovimentoEstoque } from '../src/domain/types';
 
 // ==================== HELPER FUNCTIONS ====================
 

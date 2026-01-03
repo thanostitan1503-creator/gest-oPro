@@ -6,10 +6,10 @@ import {
   CheckCircle2, AlertTriangle, AlertOctagon,
   Save, Search, Eye
 } from 'lucide-react';
-import { scanSystemForAlerts } from '../domain/alert.logic';
-import { getAlertsConfig, saveAlertsConfig } from '../domain/storage';
+import { scanSystemForAlerts } from '../src/domain/alert.logic';
+import { getAlertsConfig, saveAlertsConfig } from '../src/domain/storage';
 import { listProducts } from '../src/domain_old/repositories';
-import { SystemAlert, AlertConfig, Produto } from '../domain/types';
+import { SystemAlert, AlertConfig, Produto } from '../src/domain/types';
 
 const isDeliveryFeeProduct = (product: any) => {
   const flag = product?.is_delivery_fee ?? product?.isDeliveryFee;

@@ -18,9 +18,9 @@ import { Dexie } from 'dexie';
 Dexie.dependencies.indexedDB = (global as any).indexedDB;
 Dexie.dependencies.IDBKeyRange = (global as any).IDBKeyRange;
 
-import { db } from '../domain/db';
-import { listEmployees, upsertEmployee } from '../domain/repositories/employees.repo';
-import type { Colaborador } from '../domain/types';
+import { db } from '../src/domain/db';
+import { listEmployees, upsertEmployee } from '../src/domain/repositories/employees.repo';
+import type { Colaborador } from '../src/domain/types';
 
 const colors = {
   reset: '\x1b[0m',

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Trash2 } from 'lucide-react';
-import { db } from '../domain/db';
+import { db } from '../src/domain/db';
 
 export interface OrderItem {
   id: string;

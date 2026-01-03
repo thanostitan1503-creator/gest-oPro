@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Warehouse, ArrowLeftRight, Plus, Save, RefreshCw, X } from 'lucide-react';
-import { db, generateId } from '../domain/db';
-import { Colaborador, Deposit, Produto } from '../domain/types';
-import { upsertDeposit, deleteDeposit } from '../domain/repositories/deposits.repo';
-import { listProducts } from '../domain/repositories/products.repo';
-import { applyMovements } from '../domain/repositories/stock.repo';
+import { db, generateId } from '../src/domain/db';
+import { Colaborador, Deposit, Produto } from '../src/domain/types';
+import { upsertDeposit, deleteDeposit } from '../src/domain/repositories/deposits.repo';
+import { listProducts } from '../src/domain/repositories/products.repo';
+import { applyMovements } from '../src/domain/repositories/stock.repo';
 
 type Props = {
   onClose: () => void;

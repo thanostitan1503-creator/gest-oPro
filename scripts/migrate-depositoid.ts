@@ -9,7 +9,7 @@
  * SOLUÇÃO: Unificar tudo em depositoId (camelCase)
  */
 
-import { db } from '../domain/db';
+import { db } from '../src/domain/db';
 
 async function migrateDepositIds() {
   console.log('🔧 === MIGRAÇÃO: Normalizar depositoId ===\n');

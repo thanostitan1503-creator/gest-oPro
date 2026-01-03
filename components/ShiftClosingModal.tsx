@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckSquare, ClipboardCheck, Save, X } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useShift } from '../src/contexts/ShiftContext';
-import { db } from '../domain/db';
-import { getStockMapForDeposit } from '../domain/repositories/stock.repo';
-import { saveShiftStockAudits } from '../domain/repositories/shift.repo';
-import type { Produto, ShiftStockAudit } from '../domain/types';
+import { db } from '../src/domain/db';
+import { getStockMapForDeposit } from '../src/domain/repositories/stock.repo';
+import { saveShiftStockAudits } from '../src/domain/repositories/shift.repo';
+import type { Produto, ShiftStockAudit } from '../src/domain/types';
 
 interface ShiftClosingModalProps {
   onClose: () => void;

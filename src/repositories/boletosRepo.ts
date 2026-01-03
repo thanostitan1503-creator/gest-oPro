@@ -1,5 +1,5 @@
-import { supabase } from '../../domain/supabaseClient';
-import { generateId } from '../../domain/db';
+import { supabase } from '../../src/domain/supabaseClient';
+import { generateId } from '../../src/domain/db';
 import type { Boleto } from '../types/boleto';
 
 const normalizeDueDate = (val?: string | null) => {

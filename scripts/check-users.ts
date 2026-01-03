@@ -4,7 +4,7 @@
  */
 
 import Dexie from 'dexie';
-import { Employee } from '../domain/types';
+import { Employee } from '../src/domain/types';
 
 // Definir schema Dexie igual ao do sistema
 class GasDB extends Dexie {

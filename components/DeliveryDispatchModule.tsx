@@ -5,10 +5,10 @@ import {
   User, CheckCircle2, AlertCircle, RefreshCw,
   ArrowRight, Filter, ChevronRight, Activity, WifiOff
 } from 'lucide-react';
-import { DeliveryJob, DriverPresence } from '../domain/types';
+import { DeliveryJob, DriverPresence } from '../src/domain/types';
 import { listDeliveryJobs } from '../src/domain_old/repositories';
-import { assignJobToDriver, checkDeliveryTimeouts } from '../domain/delivery.logic';
-import { getAllDriversStatus } from '../domain/driverPresence.logic';
+import { assignJobToDriver, checkDeliveryTimeouts } from '../src/domain/delivery.logic';
+import { getAllDriversStatus } from '../src/domain/driverPresence.logic';
 
 interface DeliveryDispatchModuleProps {
   onClose: () => void;

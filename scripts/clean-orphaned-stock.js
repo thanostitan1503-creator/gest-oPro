@@ -6,7 +6,7 @@
  * e product_exchange_rules que apontam para produtos que não existem mais.
  */
 
-import { db } from '../domain/db.ts';
+import { db } from '../src/domain/db.ts';
 
 async function cleanOrphanedStock() {
   console.log('🧹 Iniciando limpeza de dados órfãos...\n');

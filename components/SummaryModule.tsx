@@ -13,10 +13,10 @@ import {
   FileText,
   Activity
 } from 'lucide-react';
-import { listServiceOrders } from '../domain/repositories/serviceOrders.repo';
-import { listDeposits } from '../domain/repositories/deposits.repo';
-import { listEmployees } from '../domain/repositories/employees.repo';
-import { OrdemServico, LogHistoricoOS } from '../domain/types';
+import { listServiceOrders } from '../src/domain/repositories/serviceOrders.repo';
+import { listDeposits } from '../src/domain/repositories/deposits.repo';
+import { listEmployees } from '../src/domain/repositories/employees.repo';
+import { OrdemServico, LogHistoricoOS } from '../src/domain/types';
 import { normalizeDepositId } from '../src/domain_old/utils/dataSanitizer';
 
 const formatCurrency = (value: number) =>
