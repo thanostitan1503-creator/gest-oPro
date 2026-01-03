@@ -1,0 +1,52 @@
+{
+  "name": "gestão-pro",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "tsx tests/run-all.ts",
+    "test:login": "tsx tests/login.test.ts",
+    "test:login-flow": "tsx tests/login-flow.test.ts",
+    "test:exchange": "tsx tests/exchange.test.ts",
+    "test:shift": "tsx tests/shift-closing.test.ts",
+    "users:list": "tsx scripts/manage-users.ts list",
+    "users:reset": "tsx scripts/manage-users.ts reset",
+    "users:clear": "tsx scripts/manage-users.ts clear",
+    "users:check": "tsx scripts/check-users.ts",
+    "users:fix": "tsx scripts/fix-users.ts",
+    "db:reset": "tsx scripts/reset-db.ts",
+    "validate": "node scripts/validate-lei-magna.mjs"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
+    "@supabase/supabase-js": "^2.89.0",
+    "axios": "^1.13.2",
+    "dexie": "4.0.1",
+    "dexie-react-hooks": "^1.1.6",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.4",
+    "leaflet": "^1.9.4",
+    "leaflet-draw": "^1.0.4",
+    "leaflet.heat": "^0.2.0",
+    "lucide": "^0.559.0",
+    "lucide-react": "^0.559.0",
+    "playwright": "^1.57.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "react-hook-form": "^7.69.0",
+    "react-leaflet": "^5.0.0",
+    "react-leaflet-draw": "^0.21.0",
+    "zod": "^4.3.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "fake-indexeddb": "^6.2.5",
+    "tsx": "^4.7.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
