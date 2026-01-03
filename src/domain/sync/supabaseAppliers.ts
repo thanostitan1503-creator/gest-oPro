@@ -19,7 +19,7 @@ import {
   ZonePricing,
 } from '../types';
 import { AccountsReceivable, ReceivablePayment } from '../db';
-import { toSupabaseFormat } from '../../src/domain_old/utils/dataSanitizer';
+import { toSupabaseFormat } from '../../src/domain/utils/dataSanitizer';
 
 type AnyRow = Record<string, any>;
 

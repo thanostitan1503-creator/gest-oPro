@@ -1,7 +1,7 @@
 import { db, generateId, StockBalanceRow, StockTransfer, StockTransferItem } from '../db';
 import { MovimentoEstoque } from '../types';
 import { enqueueOutboxEvent } from '../sync/outbox';
-import { normalizeDepositId } from '../../src/domain_old/utils/dataSanitizer';
+import { normalizeDepositId } from '../../src/domain/utils/dataSanitizer';
 
 function movementDelta(mov: MovimentoEstoque): number {
   switch (mov.tipo) {

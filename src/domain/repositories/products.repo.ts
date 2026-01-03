@@ -1,7 +1,7 @@
 import { db, generateId } from '../db';
 import { Produto } from '../types';
 import { enqueueOutboxEvent } from '../sync/outbox';
-import { normalizeDepositId } from '../../src/domain_old/utils/dataSanitizer';
+import { normalizeDepositId } from '../../src/domain/utils/dataSanitizer';
 
 function isUuid(value: unknown): boolean {
   if (typeof value !== 'string') return false;

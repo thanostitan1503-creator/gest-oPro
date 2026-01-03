@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Barcode, Check, Copy, ExternalLink, Loader2, Pencil, X } from 'lucide-react';
-import type { AccountsReceivable } from '../../../domain/db';
-import { updateReceivable } from '../../../domain/repositories/receivables.repo';
+import type { AccountsReceivable } from '../../../src/domain/db';
+import { updateReceivable } from '../../../src/domain/repositories/receivables.repo';
 import type { Boleto, BoletoStatus } from '../../types/boleto';
 import * as boletosRepo from '../../repositories/boletosRepo';
 

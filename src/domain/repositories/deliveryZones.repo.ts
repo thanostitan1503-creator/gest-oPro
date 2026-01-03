@@ -1,7 +1,7 @@
 import { db, generateId } from '../db';
 import { DeliverySector, DeliveryZone } from '../types';
 import { enqueueOutboxEvent } from '../sync/outbox';
-import { normalizeDepositId } from '../../src/domain_old/utils/dataSanitizer';
+import { normalizeDepositId } from '../../src/domain/utils/dataSanitizer';
 
 export async function listDeliveryZones() {
   const zones = await db.delivery_zones.toArray();

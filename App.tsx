@@ -33,8 +33,8 @@ import {
   setThemeBackgroundOpacity,
 } from './src/domain/storage';
 import { supabase } from './src/domain/supabaseClient';
-import { startAutoSync } from './src/domain_old/sync/syncService';
-import { syncAllFromSupabase } from './src/domain_old/sync/syncPull';
+import { startAutoSync } from './src/domain/sync/syncService';
+import { syncAllFromSupabase } from './src/domain/sync/syncService';
 import { ShiftProvider, useShift } from './src/contexts/ShiftContext';
 
 const ShiftGate: React.FC<{ currentUser: Colaborador; children: React.ReactNode }> = ({ currentUser, children }) => {

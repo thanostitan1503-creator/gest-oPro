@@ -17,7 +17,7 @@ import { listServiceOrders } from '../src/domain/repositories/serviceOrders.repo
 import { listDeposits } from '../src/domain/repositories/deposits.repo';
 import { listEmployees } from '../src/domain/repositories/employees.repo';
 import { OrdemServico, LogHistoricoOS } from '../src/domain/types';
-import { normalizeDepositId } from '../src/domain_old/utils/dataSanitizer';
+import { normalizeDepositId } from '../src/domain/utils/dataSanitizer';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);

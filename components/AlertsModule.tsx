@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { scanSystemForAlerts } from '../src/domain/alert.logic';
 import { getAlertsConfig, saveAlertsConfig } from '../src/domain/storage';
-import { listProducts } from '../src/domain_old/repositories';
+import { listProducts } from '../src/domain/repositories/index';
 import { SystemAlert, AlertConfig, Produto } from '../src/domain/types';
 
 const isDeliveryFeeProduct = (product: any) => {

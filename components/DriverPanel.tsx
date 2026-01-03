@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Colaborador, DeliveryJob } from '../src/domain/types';
-import { listDeliveryJobsByDriver } from '../src/domain_old/repositories';
+import { listDeliveryJobsByDriver } from '../src/domain/repositories/index';
 import { DriverWaitingModule } from './DriverWaitingModule';
 import { DriverCurrentDeliveryModule } from './DriverCurrentDeliveryModule';
 import { LogOut } from 'lucide-react';

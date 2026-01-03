@@ -33,7 +33,7 @@ import { BoletoManagerModal } from '../src/components/Financeiro/BoletoManagerMo
 import type { Boleto } from '../src/types/boleto';
 import * as boletosRepo from '../src/repositories/boletosRepo';
 import { useShift } from '../src/contexts/ShiftContext';
-import { normalizeDepositId } from '../src/domain_old/utils/dataSanitizer';
+import { normalizeDepositId } from '../src/domain/utils/dataSanitizer';
 
 interface FinancialModuleProps {
   onClose: () => void;

@@ -6,7 +6,7 @@ import {
   ArrowRight, Filter, ChevronRight, Activity, WifiOff
 } from 'lucide-react';
 import { DeliveryJob, DriverPresence } from '../src/domain/types';
-import { listDeliveryJobs } from '../src/domain_old/repositories';
+import { listDeliveryJobs } from '../src/domain/repositories/index';
 import { assignJobToDriver, checkDeliveryTimeouts } from '../src/domain/delivery.logic';
 import { getAllDriversStatus } from '../src/domain/driverPresence.logic';
 

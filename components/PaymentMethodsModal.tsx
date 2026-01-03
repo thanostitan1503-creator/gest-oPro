@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PaymentMethod } from '../src/types';
-import { upsertPaymentMethod } from '../src/domain_old/repositories/paymentMethods.repo';
+import { upsertPaymentMethod } from '../src/domain/repositories/paymentMethods.repo';
 import { X } from 'lucide-react';
 
 interface PaymentMethodsModalProps {

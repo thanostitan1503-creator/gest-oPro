@@ -18,7 +18,7 @@ import {
   upsertDeliverySector,
   upsertZonePricing,
   upsertDeposit,
-} from '../src/domain_old/repositories';
+} from '../src/domain/repositories/index';
 
 interface DeliverySettingsModalProps {
   onClose: () => void;

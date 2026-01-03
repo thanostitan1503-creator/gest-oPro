@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle
 } from 'lucide-react';
 import { Colaborador, DeliveryJob, DriverStatus } from '../src/domain/types';
-import { listDeliveryJobs } from '../src/domain_old/repositories';
+import { listDeliveryJobs } from '../src/domain/repositories/index';
 import { updateDriverHeartbeat } from '../src/domain/driverPresence.logic';
 import { acceptJob, refuseJob } from '../src/domain/delivery.logic';
 

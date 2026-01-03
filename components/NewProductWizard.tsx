@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { X, ChevronRight, ArrowLeft, Info } from 'lucide-react';
 import { Produto } from '../src/domain/types';
 import { generateId } from '../src/domain/db';
-import { createProduct, updateProduct, upsertPricing, applyMovement, getBalance } from '../src/domain/repositories';
+import { createProduct, updateProduct, upsertPricing, applyMovement, getBalance } from '../src/domain/repositories/index';
 
 type Step = 'definition' | 'pricing';
 

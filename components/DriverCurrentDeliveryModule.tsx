@@ -5,7 +5,7 @@ import {
   ChevronRight, Package, DollarSign, ArrowLeft
 } from 'lucide-react';
 import { Colaborador, DeliveryJob } from '../src/domain/types';
-import { listDeliveryJobsByDriver } from '../src/domain_old/repositories';
+import { listDeliveryJobsByDriver } from '../src/domain/repositories/index';
 import { updateDriverHeartbeat } from '../src/domain/driverPresence.logic';
 import { startRoute, completeJob, cancelJob } from '../src/domain/delivery.logic';
 

@@ -23,7 +23,7 @@ import {
   Factory,
   Boxes
 } from 'lucide-react';
-import { listProducts, applyMovement, getStockMapForDeposit } from '../src/domain_old/repositories';
+import { listProducts, applyMovement, getStockMapForDeposit } from '../src/domain/repositories/index';
 import { db } from '../src/domain/db';
 import { Produto, SaldoEstoque, MovimentoEstoque } from '../src/domain/types';
 

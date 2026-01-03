@@ -13,7 +13,7 @@ import {
   upsertMachine,
   recordAudit,
   listDeposits,
-} from '../src/domain_old/repositories';
+} from '../src/domain/repositories/index';
 import { PaymentMethodsModal } from './PaymentMethodsModal';
 import { PaymentMethodsList } from './PaymentMethodsList';
 

@@ -24,7 +24,7 @@ import {
   upsertClientDiscount,
   deleteClientDiscount,
   listDeposits,
-} from '../src/domain_old/repositories';
+} from '../src/domain/repositories/index';
 
 interface ClientsModuleProps {
   onClose: () => void;

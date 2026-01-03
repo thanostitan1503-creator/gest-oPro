@@ -4,7 +4,7 @@ import { X, FileClock, Search, Filter, Calendar, AlertCircle } from 'lucide-reac
 import { MovimentoEstoque } from '../src/domain/types';
 import { supabase } from '../src/domain/supabaseClient';
 import { GlobalStatsDashboard } from '../src/components/Audit/GlobalStatsDashboard';
-import { normalizeDepositId } from '../src/domain_old/utils/dataSanitizer';
+import { normalizeDepositId } from '../src/domain/utils/dataSanitizer';
 
 interface AuditModuleProps {
   onClose: () => void;

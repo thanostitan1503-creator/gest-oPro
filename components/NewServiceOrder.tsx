@@ -26,9 +26,9 @@ import {
   updateServiceOrderStatus,
   listPaymentMethods,
   listEmployees,
-} from '../src/domain_old/repositories';
+} from '../src/domain/repositories/index';
 import { db } from '../src/domain/db';
-import { normalizeDepositId } from '../src/domain_old/utils/dataSanitizer';
+import { normalizeDepositId } from '../src/domain/utils/dataSanitizer';
 import { createDeliveryJobFromOS } from '../src/domain/delivery.logic';
 import { getEmployees } from '../src/domain/storage';
 
