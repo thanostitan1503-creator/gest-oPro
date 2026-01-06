@@ -5,18 +5,17 @@
  * Implementa regras de negócio: movement_type, preços por modalidade, vinculação de cascos.
  */
 
-import { createClient } from '@supabase/supabase-js';
-import { Database } from '../types/supabase';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+import { supabase } from '@/utils/supabaseClient';
+import type { Database } from '@/types/supabase';
 
 // Atalhos de tipos
 export type Product = Database['public']['Tables']['products']['Row'];
 export type NewProduct = Database['public']['Tables']['products']['Insert'];
 export type UpdateProduct = Database['public']['Tables']['products']['Update'];
 export type ProductPricing = Database['public']['Tables']['product_pricing']['Row'];
+type ProductInsert = Database['public']['Tables']['products']['Insert'];
+type ProductUpdate = Database['public']['Tables']['products']['Update'];
+type ProductPricingInsert = Database['public']['Tables']['product_pricing']['Insert'];
 
 /**
  * Service Pattern para Products
@@ -96,7 +95,7 @@ export const productService = {
 
     const { data, error } = await supabase
       .from('products')
-      .insert(product)
+      .insert([product]) // Inserir como array
       .select()
       .single();
 
@@ -202,12 +201,12 @@ export const productService = {
     // Upsert (insert ou update se já existir)
     const { data, error } = await supabase
       .from('product_pricing')
-      .upsert({
+      .upsert([{
         product_id: productId,
         deposit_id: depositId,
         ...pricing,
         is_active: true
-      })
+      }]) // Inserir como array
       .select()
       .single();
 
@@ -293,5 +292,64 @@ export const productService = {
     
     if (error) throw new Error(`Erro ao buscar produtos EXCHANGE: ${error.message}`);
     return data || [];
+  },
+
+  /**
+   * Funções auxiliares para manipulação direta com validação de tipos
+   */
+  async createProduct(product: ProductInsert) {
+    const validatedProduct: ProductInsert = {
+      ...product,
+    };
+    // Evita enviar colunas que não existem no schema do Supabase
+    // (alguns componentes legados ainda montam esses campos)
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedProduct as any).current_stock;
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedProduct as any).min_stock;
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedProduct as any).markup;
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedProduct as any).tracks_empties;
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedProduct as any).is_delivery_fee;
+    const { data, error } = await supabase.from('products').insert([validatedProduct]); // Inserir como array
+    if (error) throw error;
+    return data;
+  },
+
+  async updateProduct(id: string, updates: ProductUpdate) {
+    const validatedUpdates: ProductUpdate = {
+      ...updates,
+    };
+    // Evita enviar colunas que não existem no schema do Supabase
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedUpdates as any).current_stock;
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedUpdates as any).min_stock;
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedUpdates as any).markup;
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedUpdates as any).tracks_empties;
+    // @ts-expect-error - limpeza defensiva em runtime
+    delete (validatedUpdates as any).is_delivery_fee;
+    const { data, error } = await supabase.from('products').update(validatedUpdates).eq('id', id);
+    if (error) throw error;
+    return data;
+  },
+
+  async deactivateProduct(id: string) {
+    const { data, error } = await supabase.from('products').update({ is_active: false }).eq('id', id);
+    if (error) throw error;
+    return data;
+  },
+
+  async upsertProductPricing(pricing: ProductPricingInsert) {
+    const validatedPricing: ProductPricingInsert = {
+      ...pricing,
+    };
+    const { data, error } = await supabase.from('product_pricing').upsert([validatedPricing]); // Inserir como array
+    if (error) throw error;
+    return data;
   }
 };

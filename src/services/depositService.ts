@@ -10,13 +10,8 @@
  * - Use o hook useToast() nos componentes para feedback visual
  */
 
-import { createClient } from '@supabase/supabase-js';
-import { Database } from '../types/supabase';
-
-// Inicializa o cliente Supabase com tipagem forte
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+import { supabase } from '@/utils/supabaseClient';
+import type { Database } from '@/types/supabase';
 
 // Atalhos de tipos (facilita uso nos componentes)
 export type Deposit = Database['public']['Tables']['deposits']['Row'];
@@ -172,5 +167,5 @@ export const depositService = {
 
     if (error) throw error; // ⚠️ Lança o erro original
     return (data?.length || 0) > 0;
-  }
+  },
 };

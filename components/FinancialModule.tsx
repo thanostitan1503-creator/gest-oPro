@@ -34,6 +34,7 @@ import type { Boleto } from '@/types/boleto';
 // ⚠️ REMOVIDO v3.0: import * as boletosRepo from '@/repositories/boletosRepo';
 import { useShift } from '@/contexts/ShiftContext';
 // ⚠️ REMOVIDO v3.0: import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
+import { db, useLiveQuery, normalizeDepositId } from '@/utils/legacyHelpers';
 
 interface FinancialModuleProps {
   onClose: () => void;

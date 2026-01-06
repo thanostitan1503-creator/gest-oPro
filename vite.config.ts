@@ -15,9 +15,10 @@ export default defineConfig(({ mode }) => {
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
       },
       resolve: {
-        alias: {
-          '@': path.resolve(__dirname, './src'),
-        }
+        alias: [
+          { find: '@', replacement: path.resolve(__dirname, './src') },
+          { find: /^leaflet-draw$/, replacement: path.resolve(__dirname, './src/shims/leaflet-draw-default.js') },
+        ],
       }
     };
 });

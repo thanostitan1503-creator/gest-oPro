@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardCheck, Factory, AlertTriangle, Save } from 'lucide-react';
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { useShift } from '@/contexts/ShiftContext';
+import { useLiveQuery, db } from '@/utils/legacyHelpers';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 // ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 // ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories

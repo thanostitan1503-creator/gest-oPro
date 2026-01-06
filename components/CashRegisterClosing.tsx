@@ -5,8 +5,8 @@ import {
   Calendar, DollarSign, ArrowRight, Banknote,
   TrendingUp, AlertTriangle
 } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: import { getOrders, getProducts } from '@/domain/storage';
 import { OrdemServico } from '@/domain/types';
+import { getOrders, getProducts } from '@/utils/legacyHelpers';
 
 interface CashRegisterClosingProps {
   onClose: () => void;

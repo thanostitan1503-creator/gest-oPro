@@ -1,11 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckSquare, ClipboardCheck, Save, X } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { useShift } from '@/contexts/ShiftContext';
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import type { Produto, ShiftStockAudit } from '@/domain/types';
+import { useLiveQuery, db } from '@/utils/legacyHelpers';
 
 interface ShiftClosingModalProps {
   onClose: () => void;

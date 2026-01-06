@@ -521,6 +521,24 @@ const MapRefSetter: React.FC<{ mapRef: React.MutableRefObject<L.Map | null> }> =
 
 // ⚠️ REMOVIDO: Sem depósito automático. Usuário deve sempre selecionar manualmente.
 
+// Stub temporário para db
+const db: any = { 
+  delivery_zones: { bulkDelete: async () => {}, toArray: async () => [] },
+  zone_pricing: { bulkDelete: async () => {}, toArray: async () => [] },
+  delivery_sectors: { bulkDelete: async () => {}, toArray: async () => [] },
+  deposits: { bulkAdd: async () => {}, toArray: async () => [] },
+  service_orders: { toArray: async () => [] },
+};
+
+// Stub temporário para useLiveQuery
+const useLiveQuery = (fn: any, deps: any) => {
+  const [data, setData] = useState<any>(undefined);
+  useEffect(() => {
+    fn().then((result: any) => setData(result || [])).catch(() => setData([]));
+  }, deps);
+  return data;
+};
+
 export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ onClose }) => {
   const zonesRaw = useLiveQuery(() => db.delivery_zones?.toArray(), []);
   const sectorsRaw = useLiveQuery(() => db.delivery_zones?.toArray(), []);

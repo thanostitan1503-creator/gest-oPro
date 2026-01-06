@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
-// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { Trash2 } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
+import { useLiveQuery, db } from '@/utils/legacyHelpers';
 
 export interface OrderItem {
   id: string;

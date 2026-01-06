@@ -11,9 +11,131 @@ import {
   Cliente, ClientePreco, ClienteDescontoPendente, 
   UserRole, DepositoFisicoId, ModalidadeItem 
 } from '@/domain/types';
+import { supabase } from '@/utils/supabaseClient';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 
 // ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+
+// Funções auxiliares para comunicação com Supabase
+const listClients = async (): Promise<Cliente[]> => {
+  const { data, error } = await supabase.from('clients').select('*').order('name');
+  if (error) throw error;
+  return (data || []).map((c: any) => ({
+    id: c.id,
+    nome: c.name,
+    endereco: c.address,
+    telefone: c.phone,
+    cpf: c.cpf,
+    referencia: c.reference,
+    dataNascimento: c.birth_date,
+    deliveryZoneId: c.delivery_zone_id,
+    ativo: c.is_active,
+    criado_em: new Date(c.created_at).getTime(),
+    atualizado_em: new Date(c.updated_at).getTime(),
+  }));
+};
+
+const upsertClient = async (client: Partial<Cliente>): Promise<void> => {
+  const nowIso = new Date().toISOString();
+  const birth = client.dataNascimento ? client.dataNascimento : null;
+
+  const dbClient: any = {
+    id: client.id,
+    name: client.nome,
+    address: client.endereco,
+    phone: client.telefone,
+    cpf: client.cpf,
+    reference: client.referencia,
+    birth_date: birth,
+    delivery_zone_id: client.deliveryZoneId ?? null,
+    is_active: client.ativo ?? true,
+    updated_at: nowIso,
+  };
+
+  if (!client.id) {
+    dbClient.created_at = nowIso;
+  }
+
+  const { error } = await supabase.from('clients').upsert(dbClient);
+  if (error) throw error;
+};
+
+const deleteClient = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('clients').delete().eq('id', id);
+  if (error) throw error;
+};
+
+const listClientPrices = async (): Promise<ClientePreco[]> => {
+  const { data, error } = await supabase.from('client_price_overrides').select('*');
+  if (error) throw error;
+  return (data || []).map((p: any) => ({
+    id: p.id,
+    clienteId: p.client_id,
+    produtoId: p.product_id,
+    depositoId: p.deposit_id,
+    modalidade: p.modality,
+    precoEspecial: p.special_price,
+    ativo: p.is_active,
+    atualizado_em: new Date(p.updated_at).getTime(),
+  }));
+};
+
+const upsertClientPrice = async (price: ClientePreco): Promise<void> => {
+  const dbPrice: any = {
+    id: price.id,
+    client_id: price.clienteId,
+    product_id: price.produtoId,
+    deposit_id: price.depositoId,
+    modality: price.modalidade,
+    special_price: price.precoEspecial,
+    is_active: price.ativo,
+  };
+  const { error } = await supabase.from('client_price_overrides').upsert(dbPrice);
+  if (error) throw error;
+};
+
+const deleteClientPrice = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('client_price_overrides').delete().eq('id', id);
+  if (error) throw error;
+};
+
+const listClientDiscounts = async (): Promise<ClienteDescontoPendente[]> => {
+  const { data, error } = await supabase.from('client_one_time_benefits').select('*');
+  if (error) throw error;
+  return (data || []).map((d: any) => ({
+    id: d.id,
+    clienteId: d.client_id,
+    depositoId: d.deposit_id,
+    tipoDesconto: d.discount_type,
+    valorDesconto: d.discount_value,
+    usado: d.used,
+    criado_em: new Date(d.created_at).getTime(),
+  }));
+};
+
+const upsertClientDiscount = async (discount: ClienteDescontoPendente): Promise<void> => {
+  const dbDiscount: any = {
+    id: discount.id,
+    client_id: discount.clienteId,
+    deposit_id: discount.depositoId,
+    discount_type: discount.tipoDesconto,
+    discount_value: discount.valorDesconto,
+    used: discount.usado,
+  };
+  const { error } = await supabase.from('client_one_time_benefits').upsert(dbDiscount);
+  if (error) throw error;
+};
+
+const deleteClientDiscount = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('client_one_time_benefits').delete().eq('id', id);
+  if (error) throw error;
+};
+
+const listDeposits = async (): Promise<Array<{ id: string; nome: string }>> => {
+  const { data, error } = await supabase.from('deposits').select('id, name').eq('active', true);
+  if (error) throw error;
+  return (data || []).map((d: any) => ({ id: d.id, nome: d.name }));
+};
 
 interface ClientsModuleProps {
   onClose: () => void;
@@ -52,7 +174,7 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
   });
 
   const [deposits, setDeposits] = useState<Array<{ id: string; nome: string }>>([]);
-  const deliveryZones = useLiveQuery(() => db.delivery_zones?.toArray(), []) || [];
+  const [deliveryZones, setDeliveryZones] = useState<Array<any>>([]);
 
   const [discountForm, setDiscountForm] = useState<Partial<ClienteDescontoPendente>>({
     tipoDesconto: 'VALOR',
@@ -89,6 +211,22 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
         setDeposits(deps.map((x: any) => ({ id: x.id, nome: x.nome })));
       } catch (e) {
         // ignore
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Carregar zonas de entrega
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        // ⚠️ TODO v3.0: Implementar deliveryService.listZones()
+        // const zones = await deliveryService.listZones();
+        // if (!alive) return;
+        // setDeliveryZones(zones);
+      } catch (e) {
+        console.error('Erro ao carregar zonas:', e);
       }
     })();
     return () => { alive = false; };

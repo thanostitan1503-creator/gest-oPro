@@ -1,15 +1,15 @@
-import React, { useState, useMemo, useCallback } from 'react';
-// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   X, Save, Plus, Trash2, Edit2, Warehouse, Package, ArrowLeftRight,
   ClipboardCheck, AlertTriangle, Users, ShoppingCart, Check, RefreshCw,
   Search, ChevronRight, MapPin, Hash, Palette, Loader2, Settings, Database,
   Box, Repeat, ShoppingBag, Tag
 } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { Deposit, Colaborador, MovimentoEstoque, Product, StockMovementRule } from '@/domain/types';
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+import { 
+  upsertDeposit, deleteDeposit, listDeposits, listProducts, applyMovement,
+  useLiveQuery, db,
+} from '@/utils/legacyHelpers';
 
 // ============================================================================
 // TIPOS
@@ -144,6 +144,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     counts: {},
   });
   const [counting, setCounting] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   
   // Delete confirmation modal
   const [deleteModal, setDeleteModal] = useState<{
@@ -184,7 +185,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   const allProducts = useLiveQuery(() => db.products.toArray()) ?? [];
   
   const serviceOrders = useLiveQuery(() => db.service_orders.toArray()) ?? [];
-  const stockBalance = useLiveQuery(() => db.stock_balance.toArray()) ?? [];
+  const stockBalance = useLiveQuery(() => db.stock_balance.toArray(), [refreshKey]) ?? [];
 
   // -------------------------------------------------------------------------
   // COMPUTED
@@ -364,9 +365,11 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         }
         // Zerar estoque do depósito original
         await db.stock_balance.where('deposit_id').equals(deposit.id).delete();
+        setRefreshKey(key => key + 1);
       } else if (hasStock && migrateStock === 'ignore') {
         // Apenas zerar/remover registros de estoque
         await db.stock_balance.where('deposit_id').equals(deposit.id).delete();
+        setRefreshKey(key => key + 1);
       }
 
       // 3. Excluir o depósito
@@ -589,6 +592,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
 
       setTransferForm({ originId: '', destId: '', productId: '', quantidade: 1 });
       alert('Transferência realizada com sucesso!');
+      setRefreshKey(key => key + 1);
     } catch (error) {
       console.error('Erro na transferência:', error);
       alert('Erro ao realizar transferência.');
@@ -660,13 +664,14 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
           cargaInicialCount++;
         } else {
           // Ajuste de contagem - corrige diferenças
+          const tipoAjuste = diff > 0 ? 'AJUSTE_POSITIVO' : 'AJUSTE_NEGATIVO';
           await applyMovement({
             id: crypto.randomUUID(),
             dataHora: new Date().toISOString(),
             depositoId: countForm.depositId,
             produtoId: productId,
             produtoNome: product?.nome || 'Produto',
-            tipo: 'AJUSTE_CONTAGEM',
+            tipo: tipoAjuste,
             quantidade: Math.abs(diff),
             origem: 'TELA_CONTAGEM_MOVIMENTACAO',
             usuarioId: currentUser?.id || 'system',
@@ -685,6 +690,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       if (cargaInicialCount > 0) msgs.push(`${cargaInicialCount} produto(s) com carga inicial`);
       if (ajusteCount > 0) msgs.push(`${ajusteCount} produto(s) ajustado(s)`);
       alert(`Registrado com sucesso!\n${msgs.join('\n')}`);
+      setRefreshKey(key => key + 1);
     } catch (error) {
       console.error('Erro ao salvar contagem:', error);
       alert('Erro ao salvar contagem.');

@@ -11,13 +11,9 @@ import { EditControl } from 'react-leaflet-draw';
 import { 
   X, Truck, Map as MapIcon, Flame, Activity, MapPin, Plus, Trash2, Search
 } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
-// ⚠️ REMOVIDO v3.0: import { getOrders, getDriverLocations } from '@/domain/storage';
 import { OrdemServico, DriverLocation } from '@/domain/types';
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+import { useState as useReactState } from 'react';
+import { getOrders, getDriverLocations, upsertDeliveryZone, deleteDeliveryZone, upsertZonePricing, upsertDeposit, upsertDeliverySector, deleteDeliverySector, listDeposits } from '@/utils/legacyHelpers';
 
 type LatLngTuple = [number, number];
 type LatLngPolygon = LatLngTuple[][];
@@ -258,11 +254,32 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
   // Estados de setores
   const [sectorName, setSectorName] = useState('');
   
-  const liveOrders = useLiveQuery(() => db.service_orders?.toArray(), []);
-  const zones = useLiveQuery(() => db.delivery_zones?.toArray(), []);
-  const zonePricing = useLiveQuery(() => db.zone_pricing?.toArray(), []);
-  const deposits = useLiveQuery(() => db.deposits?.toArray(), []);
-  const sectors = useLiveQuery(() => db.delivery_zones?.toArray(), []);
+  // Estados para dados (substituindo useLiveQuery)
+  const [liveOrders, setLiveOrders] = useState<any[]>([]);
+  const [zones, setZones] = useState<any[]>([]);
+  const [zonePricing, setZonePricing] = useState<any[]>([]);
+  const [deposits, setDeposits] = useState<any[]>([]);
+  const [sectors, setSectors] = useState<any[]>([]);
+  
+  // Carregar dados do Supabase
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [ordersData, depositsData] = await Promise.all([
+          getOrders(),
+          listDeposits(),
+        ]);
+        if (!alive) return;
+        setLiveOrders(ordersData || []);
+        setDeposits(depositsData || []);
+        // TODO: Carregar zones, zonePricing e sectors quando services estiverem prontos
+      } catch (e) {
+        console.error('Erro ao carregar dados:', e);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
   
   // Refs para controle da instância do mapa e elementos gráficos
   const mapInstanceRef = useRef<any>(null);

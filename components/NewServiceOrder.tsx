@@ -15,11 +15,190 @@ import { NewClientModal } from './NewClientModal';
 import { ServiceOrderItems } from './ServiceOrderItems';
 import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '@/domain/types';
 import { PaymentMethod } from '@/types';
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-// ⚠️ REMOVIDO v3.0: import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
-// ⚠️ REMOVIDO v3.0: import { createDeliveryJobFromOS } from '@/domain/delivery.logic';
-// ⚠️ REMOVIDO v3.0: import { getEmployees } from '@/domain/storage';
+import { listProducts, getOrders } from '@/utils/legacyHelpers';
+import { supabase } from '@/utils/supabaseClient';
+
+// Stub para db e useLiveQuery
+const db: any = {
+  payment_methods: { filter: () => ({ toArray: async () => [] }) },
+  employees: { filter: () => ({ toArray: async () => [] }) },
+  deposits: { filter: () => ({ toArray: async () => [] }) },
+  delivery_zones: { toArray: async () => [] },
+  zone_pricing: { toArray: async () => [] },
+  service_orders: { get: async () => null, update: async () => {} },
+};
+
+const useLiveQuery = (fn: any, deps?: any) => {
+  const [data, setData] = useState<any>(undefined);
+  useEffect(() => {
+    fn().then((result: any) => setData(result || [])).catch(() => setData([]));
+  }, deps || []);
+  return data;
+};
+
+// Funções auxiliares para NewServiceOrder
+const listServiceOrders = async () => {
+  return await getOrders();
+};
+
+const listPaymentMethods = async (): Promise<any[]> => {
+  const { data, error } = await supabase.from('payment_methods').select('*').eq('is_active', true);
+  if (error) throw error;
+  return data || [];
+};
+
+const listEmployees = async (): Promise<Colaborador[]> => {
+  const { data, error } = await supabase.from('employees').select('*').eq('is_active', true);
+  if (error) throw error;
+  return (data || []).map((e: any) => ({
+    id: e.id,
+    nome: e.name,
+    cargo: e.role,
+    depositoId: e.deposit_id,
+    ativo: e.is_active,
+    username: e.username,
+    permissoes: e.permissions || [],
+  }));
+};
+
+const getEmployees = (): Colaborador[] => {
+  try {
+    const stored = localStorage.getItem('gp_employees');
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+const listClients = async (): Promise<Cliente[]> => {
+  const { data, error } = await supabase.from('clients').select('*').eq('is_active', true);
+  if (error) throw error;
+  return (data || []).map((c: any) => ({
+    id: c.id,
+    nome: c.name,
+    endereco: c.address,
+    telefone: c.phone,
+    cpf: c.cpf,
+    referencia: c.reference,
+    dataNascimento: c.birth_date,
+    deliveryZoneId: c.delivery_zone_id,
+    ativo: c.is_active,
+  }));
+};
+
+const upsertClient = async (client: Partial<Cliente>) => {
+  const dbClient: any = {
+    id: client.id,
+    name: client.nome,
+    address: client.endereco,
+    phone: client.telefone,
+    cpf: client.cpf,
+    reference: client.referencia,
+    birth_date: client.dataNascimento,
+    delivery_zone_id: client.deliveryZoneId,
+    is_active: client.ativo ?? true,
+  };
+  const { error } = await supabase.from('clients').upsert(dbClient);
+  if (error) throw error;
+};
+
+const createProduct = async (product: any): Promise<Produto> => {
+  // Evita enviar colunas que não existem no schema do Supabase
+  if (product && typeof product === 'object') {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete product.current_stock;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete product.min_stock;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete product.markup;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete product.tracks_empties;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete product.is_delivery_fee;
+  }
+  const { data, error } = await supabase.from('products').insert(product).select().single();
+  if (error) throw error;
+  return mapProductRowToProduto(data);
+};
+
+const updateProduct = async (id: string, updates: any): Promise<Produto> => {
+  // Evita enviar colunas que não existem no schema do Supabase
+  if (updates && typeof updates === 'object') {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete updates.current_stock;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete updates.min_stock;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete updates.markup;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete updates.tracks_empties;
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    delete updates.is_delivery_fee;
+  }
+  const { data, error } = await supabase.from('products').update(updates).eq('id', id).select().single();
+  if (error) throw error;
+  return mapProductRowToProduto(data);
+};
+
+const upsertServiceOrder = async (order: any) => {
+  const { error } = await supabase.from('service_orders').upsert(order);
+  if (error) throw error;
+};
+
+const updateServiceOrderStatus = async (id: string, status: string, reason?: string, user?: string) => {
+  const { error } = await supabase.from('service_orders').update({ 
+    status, 
+    updated_at: new Date().toISOString() 
+  }).eq('id', id);
+  if (error) throw error;
+};
+
+const normalizeDepositId = (value: any) => {
+  if (!value) return { depositoId: null };
+  if (typeof value === 'string') return { depositoId: value };
+  if (typeof value === 'object') {
+    if ('depositoId' in value) return { depositoId: (value as any).depositoId ?? null };
+    if ('deposit_id' in value) return { depositoId: (value as any).deposit_id ?? null };
+    if ('depositId' in value) return { depositoId: (value as any).depositId ?? null };
+  }
+  return { depositoId: String(value) };
+};
+
+const mapProductRowToProduto = (p: any): Produto => ({
+  id: p.id,
+  codigo: p.code,
+  nome: p.name,
+  descricao: p.description,
+  tipo: p.type,
+  unidade: p.unit,
+  preco_venda: p.sale_price,
+  preco_custo: p.cost_price,
+  preco_troca: p.exchange_price,
+  preco_completa: p.full_price,
+  movement_type: p.movement_type,
+  return_product_id: p.return_product_id,
+  track_stock: p.track_stock,
+  ativo: p.is_active,
+  depositoId: p.deposit_id,
+  product_group: p.product_group,
+  image_url: p.image_url,
+});
+
+const fetchDeliveryFeeProduct = async (): Promise<Produto | null> => {
+  const { data, error } = await supabase
+    .from('products')
+    .select('*')
+    .or(`product_group.eq.${DELIVERY_FEE_GROUP},code.eq.${DELIVERY_FEE_GROUP},name.ilike.%${DELIVERY_FEE_NAME}%`)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const row = data?.[0];
+  return row ? mapProductRowToProduto(row) : null;
+};
+
+const createDeliveryJobFromOS = async (order: OrdemServico) => {
+  console.log('TODO: Criar delivery job para OS', order.id);
+};
 
 const getSessionUserName = () => {
   if (typeof localStorage === 'undefined') return null;
@@ -36,8 +215,6 @@ const getSessionUserName = () => {
 const DELIVERY_FEE_GROUP = 'delivery_fee';
 const DELIVERY_FEE_NAME = 'Taxa de entrega';
 const isDeliveryFeeProduct = (prod: any) => {
-  const flag = prod?.is_delivery_fee ?? prod?.isDeliveryFee;
-  if (flag === true) return true;
   const group = String(prod?.product_group ?? prod?.codigo ?? '').toLowerCase();
   if (group === DELIVERY_FEE_GROUP) return true;
   const name = String(prod?.nome ?? '').toLowerCase();
@@ -47,7 +224,7 @@ const isServiceProduct = (prod: any) => {
   if (isDeliveryFeeProduct(prod)) return true;
   const track = prod?.track_stock ?? prod?.trackStock;
   if (track === false) return true;
-  return prod?.type === 'SERVICE';
+  return false;
 };
 type LatLngTuple = [number, number];
 
@@ -297,17 +474,29 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [prods, methods, clients] = await Promise.all([
-        listProducts(),
+      const [prodsRaw, methods, clients] = await Promise.all([
+        listProducts().catch(() => []),
         db.payment_methods.filter((p) => p.is_active === true).toArray(),
         listClients(),
       ]);
-      let nextProducts = prods;
+
+      let nextProducts = Array.isArray(prodsRaw) ? prodsRaw : [];
       let deliveryFeeProduct =
-        prods.find((p) => (p as any).is_delivery_fee === true || (p as any).isDeliveryFee === true) ||
-        prods.find((p) => (p.product_group ?? '') === DELIVERY_FEE_GROUP) ||
-        prods.find((p) => (p.codigo ?? '') === DELIVERY_FEE_GROUP) ||
-        prods.find((p) => (p.nome ?? '').toLowerCase() === DELIVERY_FEE_NAME.toLowerCase());
+        nextProducts.find((p) => (p.product_group ?? '') === DELIVERY_FEE_GROUP) ||
+        nextProducts.find((p) => (p.codigo ?? '') === DELIVERY_FEE_GROUP) ||
+        nextProducts.find((p) => (p.nome ?? '').toLowerCase() === DELIVERY_FEE_NAME.toLowerCase()) ||
+        null;
+
+      if (!deliveryFeeProduct) {
+        try {
+          deliveryFeeProduct = await fetchDeliveryFeeProduct();
+          if (deliveryFeeProduct) {
+            nextProducts = [...nextProducts, deliveryFeeProduct];
+          }
+        } catch (err) {
+          console.error('Erro ao buscar produto de taxa de entrega:', err);
+        }
+      }
 
       if (deliveryFeeProduct && isDeliveryFeeProduct(deliveryFeeProduct)) {
         const normalized = normalizeDepositId(deliveryFeeProduct);
@@ -316,33 +505,24 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
           normalized.depositoId !== null ||
           (deliveryFeeProduct as any).product_group !== DELIVERY_FEE_GROUP ||
           (deliveryFeeProduct as any).codigo !== DELIVERY_FEE_GROUP ||
-          (deliveryFeeProduct as any).is_delivery_fee !== true ||
-          deliveryFeeProduct.preco_padrao !== 0 ||
           deliveryFeeProduct.preco_venda !== 0 ||
           deliveryFeeProduct.preco_custo !== 0;
         if (needsFix) {
           try {
             const updated = await updateProduct(deliveryFeeProduct.id, {
-              nome: DELIVERY_FEE_NAME,
-              tipo: 'OUTROS',
-              unidade: 'serv',
+              name: DELIVERY_FEE_NAME,
+              type: 'OUTROS',
+              unit: 'serv',
               product_group: DELIVERY_FEE_GROUP,
-              codigo: DELIVERY_FEE_GROUP,
-              depositoId: null, // ✅ camelCase
-              preco_padrao: 0,
-              preco_custo: 0,
-              preco_venda: 0,
-              marcacao: null,
-              tracks_empties: false,
-              ativo: true,
+              code: DELIVERY_FEE_GROUP,
+              deposit_id: null,
+              cost_price: 0,
+              sale_price: 0,
+              is_active: true,
               track_stock: false,
-              type: 'SERVICE',
-              is_delivery_fee: true,
-              current_stock: null,
-              min_stock: null,
             } as any);
             deliveryFeeProduct = updated;
-            nextProducts = prods.map((p) => (p.id === updated.id ? updated : p));
+            nextProducts = nextProducts.map((p) => (p.id === updated.id ? updated : p));
           } catch (err) {
             console.error('Erro ao atualizar servico de taxa de entrega:', err);
           }
@@ -352,27 +532,30 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       if (!deliveryFeeProduct) {
         try {
           deliveryFeeProduct = await createProduct({
-            nome: DELIVERY_FEE_NAME,
-            tipo: 'SERVICO',
-            unidade: 'serv',
+            name: DELIVERY_FEE_NAME,
+            type: 'OUTROS',
+            unit: 'serv',
             product_group: DELIVERY_FEE_GROUP,
-            codigo: DELIVERY_FEE_GROUP,
-            depositoId: null, // ✅ camelCase
-            preco_padrao: 0,
-            preco_custo: 0,
-            preco_venda: 0,
-            marcacao: null,
-            tracks_empties: false,
-            ativo: true,
+            code: DELIVERY_FEE_GROUP,
+            deposit_id: null,
+            sale_price: 0,
+            cost_price: 0,
+            is_active: true,
             track_stock: false,
-            type: 'SERVICE',
-            is_delivery_fee: true,
-            current_stock: null,
-            min_stock: null,
           } as any);
-          nextProducts = [...prods, deliveryFeeProduct];
+          nextProducts = [...nextProducts, deliveryFeeProduct];
         } catch (err) {
           console.error('Erro ao criar produto de taxa de entrega:', err);
+          try {
+            const fallback = await fetchDeliveryFeeProduct();
+            if (fallback) {
+              deliveryFeeProduct = fallback;
+              const exists = nextProducts.some((p) => p.id === fallback.id);
+              nextProducts = exists ? nextProducts : [...nextProducts, fallback];
+            }
+          } catch (innerErr) {
+            console.error('Erro ao recuperar produto de taxa apos falha de criacao:', innerErr);
+          }
         }
       }
 
@@ -1169,7 +1352,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     
     const newLog: LogHistoricoOS = {
       id: crypto.randomUUID(),
-      data: new Date().toISOString(),
+      data: Date.now(), // Timestamp em milissegundos
       usuario: currentUser?.nome || 'Sistema',
       usuarioId: currentUser?.id || 'system',
       acao,

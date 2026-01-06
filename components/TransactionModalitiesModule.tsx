@@ -7,11 +7,14 @@ import {
 } from 'lucide-react';
 import { 
   ModalidadeVenda, RotuloModalidade, RegraEstoqueModalidade, 
-  Produto, DepositoFisicoId 
+  Produto, DepositoFisicoId, Deposit 
 } from '@/domain/types';
-// ⚠️ REMOVIDO v3.0: import { getSalesModalities, saveSalesModalities, getModalityLabels, saveModalityLabels, getStockRules, saveStockRules, getProducts } from '@/domain/storage';
-// ⚠️ REMOVIDO v3.0: import { listDeposits } from '@/domain/repositories';
-import { Deposit } from '@/domain/types';
+import { 
+  getSalesModalities, saveSalesModalities,
+  getModalityLabels, saveModalityLabels,
+  getStockRules, saveStockRules,
+  getProducts, listDeposits,
+} from '@/utils/legacyHelpers';
 
 interface TransactionModalitiesModuleProps {
   onClose: () => void;

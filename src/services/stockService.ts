@@ -5,12 +5,9 @@
  * Implementa REGRA DE OURO: Saldo é SEMPRE calculado (nunca armazenado fixo).
  */
 
-import { createClient } from '@supabase/supabase-js';
-import { Database } from '../types/supabase';
+import { supabase } from '@/utils/supabaseClient';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
+import { Database } from '../types/supabase';
 
 // Atalhos de tipos
 export type StockMovement = Database['public']['Tables']['stock_movements']['Row'];
@@ -41,14 +38,23 @@ export const stockService = {
   async getBalance(productId: string, depositId: string): Promise<number> {
     const { data, error } = await supabase
       .from('stock_movements')
-      .select('quantity')
+      .select('quantity, type')
       .eq('product_id', productId)
       .eq('deposit_id', depositId);
     
     if (error) throw new Error(`Erro ao calcular saldo: ${error.message}`);
-    
-    // Soma todos os movimentos (positivos e negativos)
-    return (data || []).reduce((sum, mov) => sum + mov.quantity, 0);
+
+    const ENTRY_TYPES = ['IN', 'ENTRY', 'CARGA_INICIAL', 'TRADE_IN', 'AJUSTE_POSITIVO'];
+    const EXIT_TYPES = ['OUT', 'SALE', 'LOSS', 'TRANSFER_OUT', 'AJUSTE_NEGATIVO'];
+
+    return (data || []).reduce((sum, mov) => {
+      const qty = Number(mov.quantity || 0);
+      const t = (mov as any).type as string | null;
+      const isEntry = t ? ENTRY_TYPES.includes(t) : qty >= 0;
+      const isExit = t ? EXIT_TYPES.includes(t) : qty < 0;
+      const signed = isExit ? -Math.abs(qty) : Math.abs(qty);
+      return sum + (isEntry ? Math.abs(qty) : signed);
+    }, 0);
   },
 
   /**
@@ -57,16 +63,24 @@ export const stockService = {
   async getBalancesByDeposit(depositId: string): Promise<Map<string, number>> {
     const { data, error } = await supabase
       .from('stock_movements')
-      .select('product_id, quantity')
+      .select('product_id, quantity, type')
       .eq('deposit_id', depositId);
     
     if (error) throw new Error(`Erro ao buscar saldos: ${error.message}`);
     
     // Agrupa por produto_id
     const balances = new Map<string, number>();
+    const ENTRY_TYPES = ['IN', 'ENTRY', 'CARGA_INICIAL', 'TRADE_IN', 'AJUSTE_POSITIVO'];
+    const EXIT_TYPES = ['OUT', 'SALE', 'LOSS', 'TRANSFER_OUT', 'AJUSTE_NEGATIVO'];
+
     (data || []).forEach(mov => {
+      const qty = Number(mov.quantity || 0);
+      const t = (mov as any).type as string | null;
+      const isEntry = t ? ENTRY_TYPES.includes(t) : qty >= 0;
+      const isExit = t ? EXIT_TYPES.includes(t) : qty < 0;
+      const signed = isExit ? -Math.abs(qty) : Math.abs(qty);
       const current = balances.get(mov.product_id) || 0;
-      balances.set(mov.product_id, current + mov.quantity);
+      balances.set(mov.product_id, current + (isEntry ? Math.abs(qty) : signed));
     });
     
     return balances;

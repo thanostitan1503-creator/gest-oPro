@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { useLiveQuery, db, listEmployees } from '@/utils/legacyHelpers';
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { 

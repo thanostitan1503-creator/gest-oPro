@@ -6,10 +6,8 @@ import {
   CheckCircle2, AlertTriangle, AlertOctagon,
   Save, Search, Eye
 } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: import { scanSystemForAlerts } from '@/domain/alert.logic';
-// ⚠️ REMOVIDO v3.0: import { getAlertsConfig, saveAlertsConfig } from '@/domain/storage';
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { SystemAlert, AlertConfig, Produto } from '@/domain/types';
+import { scanSystemForAlerts, listProducts, getAlertsConfig, saveAlertsConfig, DEFAULT_ALERTS_CONFIG } from '@/utils/legacyHelpers';
 
 const isDeliveryFeeProduct = (product: any) => {
   const flag = product?.is_delivery_fee ?? product?.isDeliveryFee;
@@ -34,52 +32,74 @@ interface AlertsModuleProps {
 export const AlertsModule: React.FC<AlertsModuleProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<'monitor' | 'config-stock' | 'config-fin'>('monitor');
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
-  const [config, setConfig] = useState<AlertConfig>({
-    minStock: {},
-    financialDaysNotice: 3,
-    minMarginPercent: 15,
-    enabledStock: true,
-    enabledFinancial: true,
-    enabledMargin: true
-  });
+   const [config, setConfig] = useState<AlertConfig>(DEFAULT_ALERTS_CONFIG);
   
   const [products, setProducts] = useState<Produto[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Load Data
   useEffect(() => {
-      let alive = true;
-      (async () => {
-         const [alertsNow, productsNow] = await Promise.all([scanSystemForAlerts(), listProducts()]);
-         if (!alive) return;
-         setAlerts(alertsNow);
-         setConfig(getAlertsConfig());
-         setProducts(productsNow);
-      })();
+         let alive = true;
+         (async () => {
+            try {
+               const [alertsNow, productsNow, configNow] = await Promise.all([
+                  scanSystemForAlerts(),
+                  listProducts(),
+                  getAlertsConfig(),
+               ]);
+               if (!alive) return;
+               setAlerts(alertsNow || []);
+               setProducts(productsNow || []);
+               setConfig((configNow as AlertConfig) || DEFAULT_ALERTS_CONFIG);
+            } catch (err) {
+               console.error('Erro ao carregar dados da Central de Alertas:', err);
+               if (alive) {
+                  setAlerts([]);
+                  setProducts([]);
+                  setConfig(DEFAULT_ALERTS_CONFIG);
+               }
+            }
+         })();
 
-      return () => {
-         alive = false;
-      };
+         return () => {
+             alive = false;
+         };
   }, []);
 
-   const refreshAlerts = () => {
-      (async () => {
-         const alertsNow = await scanSystemForAlerts();
-         setAlerts(alertsNow);
-      })();
-   };
+    const refreshAlerts = () => {
+         (async () => {
+            try {
+               const alertsNow = await scanSystemForAlerts();
+               setAlerts(alertsNow || []);
+            } catch (err) {
+               console.error('Erro ao reprocessar alertas:', err);
+               setAlerts([]);
+            }
+         })();
+    };
 
-  const handleSaveConfig = () => {
-    saveAlertsConfig(config);
-    refreshAlerts(); // Re-scan with new rules
-    alert('Configurações de alerta salvas e aplicadas!');
+   const handleSaveConfig = async () => {
+      try {
+         await saveAlertsConfig(config);
+         refreshAlerts(); // Re-scan with new rules
+         alert('Configurações de alerta salvas e aplicadas!');
+      } catch (err) {
+         console.error('Erro ao salvar configurações de alertas:', err);
+         alert('Não foi possível salvar as configurações de alertas. Verifique sua conexão.');
+      }
   };
 
-  const toggleAlertCategory = (category: 'enabledStock' | 'enabledFinancial' | 'enabledMargin') => {
-    const newConfig = { ...config, [category]: !config[category] };
-    setConfig(newConfig);
-    saveAlertsConfig(newConfig);
-    setTimeout(refreshAlerts, 100);
+   const toggleAlertCategory = async (category: 'enabledStock' | 'enabledFinancial' | 'enabledMargin') => {
+      const newConfig = { ...config, [category]: !config[category] };
+      setConfig(newConfig);
+      try {
+         await saveAlertsConfig(newConfig);
+         setTimeout(refreshAlerts, 100);
+      } catch (err) {
+         console.error('Erro ao alternar categoria de alerta:', err);
+         alert('Não foi possível salvar esta configuração. Tente novamente.');
+         setConfig(config); // revert visual state
+      }
   };
 
   const handleMinStockChange = (prodId: string, val: string) => {

@@ -5,13 +5,9 @@
  * Implementa TODA a lógica de venda: itens, pagamentos, estoque, delivery.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/utils/supabaseClient';
 import { Database } from '../types/supabase';
 import { stockService } from './stockService';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
 // Atalhos de tipos
 export type ServiceOrder = Database['public']['Tables']['service_orders']['Row'];

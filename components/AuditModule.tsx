@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, FileClock, Search, Filter, Calendar, AlertCircle } from 'lucide-react';
 import { MovimentoEstoque } from '@/domain/types';
-import { supabase } from '@/domain/supabaseClient';
+import { supabase } from '@/utils/supabaseClient';
 import { GlobalStatsDashboard } from '@/components/Audit/GlobalStatsDashboard';
+import { normalizeDepositId } from '@/utils/legacyHelpers';
 // ⚠️ REMOVIDO v3.0: import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 interface AuditModuleProps {

@@ -4,12 +4,8 @@
  * Serviço para gestão de Clientes.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/utils/supabaseClient';
 import { Database } from '../types/supabase';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
 export type Client = Database['public']['Tables']['clients']['Row'];
 export type NewClient = Database['public']['Tables']['clients']['Insert'];

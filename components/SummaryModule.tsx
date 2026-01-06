@@ -17,6 +17,7 @@ import {
 // ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 // ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { OrdemServico, LogHistoricoOS } from '@/domain/types';
+import { listServiceOrders, listDeposits, listEmployees } from '@/utils/legacyHelpers';
 // ⚠️ REMOVIDO v3.0: import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 const formatCurrency = (value: number) =>

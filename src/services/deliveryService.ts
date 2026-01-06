@@ -4,12 +4,8 @@
  * Serviço para operações de entrega: zonas, setores, jobs, entregadores.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/utils/supabaseClient';
 import { Database } from '../types/supabase';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
 export type DeliveryZone = Database['public']['Tables']['delivery_zones']['Row'];
 export type DeliverySector = Database['public']['Tables']['delivery_sectors']['Row'];

@@ -163,12 +163,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
     try {
       // 1. Create Default Deposit with proper UUID - usando repository pattern
-      const newDeposit: Deposito = {
-        id: crypto.randomUUID(), // ✅ CORRIGIDO: UUID válido
-        nome: setupDeposit,
-        endereco: 'Endereço Principal',
-        ativo: true,
-        corIdentificacao: 'blue'
+      const newDeposit = {
+        id: crypto.randomUUID(),
+        name: setupDeposit,
+        address: 'Endereço Principal',
+        is_active: true,
+        color: 'blue'
       };
       
       // ✅ v3.0: Salvar direto no Supabase
@@ -176,15 +176,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       if (depositError) throw depositError;
 
       // 2. Create Admin User usando Supabase direto
-      const newAdmin: Colaborador = {
-        id: crypto.randomUUID(), // ✅ UUID válido
-        nome: setupName,
-        cargo: 'GERENTE',
-        depositoId: newDeposit.id, // ✅ Vinculado ao depósito criado
-        ativo: true,
+      const newAdmin = {
+        id: crypto.randomUUID(),
+        name: setupName,
+        role: 'GERENTE',
+        deposit_id: newDeposit.id,
+        is_active: true,
         username: setupUser.trim(),
         password: setupPass.trim(),
-        permissoes: DASHBOARD_ITEMS.map(i => i.id) // Full access
+        permissions: DASHBOARD_ITEMS.map(i => i.id) // Full access
       };
       
       // ✅ v3.0: Salvar direto no Supabase
@@ -192,7 +192,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
       if (employeeError) throw employeeError;
 
       // 3. Auto Login
-      setTimeout(() => onLoginSuccess(newAdmin), 500);
+      setTimeout(() => onLoginSuccess(newAdmin as any), 500);
     } catch (err) {
       console.error('Erro ao criar depósito:', err);
       setError('Erro ao configurar sistema. Tente novamente.');

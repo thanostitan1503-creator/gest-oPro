@@ -4,12 +4,8 @@
  * Serviço para operações financeiras: contas a receber, despesas, caixa.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/utils/supabaseClient';
 import { Database } from '../types/supabase';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 
 export type AccountsReceivable = Database['public']['Tables']['accounts_receivable']['Row'];
 export type NewAccountsReceivable = Database['public']['Tables']['accounts_receivable']['Insert'];
