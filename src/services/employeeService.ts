@@ -24,7 +24,7 @@ export const employeeService = {
     const { data, error } = await supabase
       .from('employees')
       .select('*')
-      .eq('is_active', true)
+      .eq('active', true)
       .order('name');
 
     if (error) throw error;
@@ -56,7 +56,7 @@ export const employeeService = {
       .from('employees')
       .select('*')
       .eq('username', username.toLowerCase())
-      .eq('is_active', true)
+      .eq('active', true)
       .single();
 
     if (error) {
@@ -74,7 +74,7 @@ export const employeeService = {
       .from('employees')
       .select('*')
       .eq('deposit_id', depositId)
-      .eq('is_active', true)
+      .eq('active', true)
       .order('name');
 
     if (error) throw error;
@@ -89,7 +89,7 @@ export const employeeService = {
       .from('employees')
       .select('*')
       .eq('role', role)
-      .eq('is_active', true)
+      .eq('active', true)
       .order('name');
 
     if (error) throw error;
@@ -193,7 +193,7 @@ export const employeeService = {
   async deactivate(id: string): Promise<void> {
     const { error } = await supabase
       .from('employees')
-      .update({ is_active: false })
+      .update({ active: false })
       .eq('id', id);
 
     if (error) throw error;
@@ -205,26 +205,33 @@ export const employeeService = {
   async hasHistory(id: string): Promise<boolean> {
     const [
       { count: ordersCount },
-      { count: movementsCount },
       { count: cashFlowCount }
     ] = await Promise.all([
-      // Ordens de serviço (como entregador ou criador)
+      // Ordens de serviço onde colaborador é entregador
       supabase.from('service_orders')
         .select('*', { count: 'exact', head: true })
-        .or(`driver_id.eq.${id},user_id.eq.${id}`),
+        .eq('driver_id', id),
       
-      // Movimentações de estoque
-      supabase.from('stock_movements')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', id),
-      
-      // Lançamentos de caixa
+      // Lançamentos de caixa (created_by)
       supabase.from('cash_flow_entries')
         .select('*', { count: 'exact', head: true })
-        .eq('user_id', id)
+        .eq('created_by', id)
     ]);
 
-    return (ordersCount || 0) > 0 || (movementsCount || 0) > 0 || (cashFlowCount || 0) > 0;
+    return (ordersCount || 0) > 0 || (cashFlowCount || 0) > 0;
+  },
+
+  /**
+   * 11. Excluir colaborador (hard delete)
+   * Usar apenas se NÃO houver histórico
+   */
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('employees')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
   },
 
   /**

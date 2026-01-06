@@ -1,12 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Cylinder, Lock, User, ArrowRight, Loader2, Save, Factory, Wifi, WifiOff } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
-import { Colaborador, Deposito } from '@/domain/types';
+import { Colaborador } from '@/domain/types';
 import { DASHBOARD_ITEMS } from '../constants';
-import { supabase } from '@/domain/supabaseClient';
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
+import { employeeService, depositService } from '@/services';
+import { toast } from 'sonner';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: Colaborador) => void;
@@ -31,17 +29,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
   useEffect(() => {
     let mounted = true;
-    
-    // Monitor connection status
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    
-    // ✅ v3.0: Buscar direto do Supabase
-    supabase.from('employees').select('*').then(({ data }) => {
-      if (mounted) setIsFirstRun(!data || data.length === 0);
-    });
+
+    employeeService.getAll()
+      .then(data => mounted && setIsFirstRun(!data || data.length === 0))
+      .catch(() => mounted && setIsFirstRun(false));
     
     return () => { 
       mounted = false;
@@ -51,39 +46,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   }, []);
 
   /**
-   * Busca usuário do Supabase e sincroniza para local
+   * Busca usuário no Supabase (online-only)
    * Retorna null se não encontrar ou se não tiver internet
    */
   const fetchUserFromCloud = async (username: string): Promise<Colaborador | null> => {
     try {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .or(`username.eq.${username},nome.eq.${username}`)
-        .single();
-      
-      if (error || !data) return null;
-      
-      // ✅ Normalizar depositoId usando a mesma lógica do repository
-      const normalizedDepositId = data.depositoId ?? data.deposito_id ?? data.deposit_id ?? null;
-      
-      // Normalizar dados do Supabase
+      const data = await employeeService.getByUsername(username.toLowerCase());
+      if (!data) return null;
+
       const cloudUser: Colaborador = {
         id: data.id,
-        nome: data.nome || data.name,
-        cpf: data.cpf,
-        telefone: data.telefone || data.phone,
-        cargo: data.cargo || data.role,
-        depositoId: normalizedDepositId, // ✅ Usar valor normalizado
-        ativo: data.ativo !== false,
+        nome: data.name,
+        cargo: data.role,
+        depositoId: data.deposit_id,
+        ativo: data.active,
         username: data.username,
         password: data.password,
-        permissoes: data.permissoes || data.permissions || [],
+        permissoes: data.permissions || [],
       };
-      
-      // Sincronizar para local (sem enfileirar no outbox para evitar loop)
-      await db.employees.put(cloudUser);
-      
+
       return cloudUser;
     } catch (err) {
       console.error('Erro ao buscar usuário da nuvem:', err);
@@ -144,7 +125,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
       // 7. Se passou, libera login
       onLoginSuccess(user);
-      setIsLoading(false);
     } catch (err) {
       console.error('Erro ao autenticar:', err);
       setError('Erro ao conectar ao banco de dados.');
@@ -162,39 +142,35 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
 
     try {
-      // 1. Create Default Deposit with proper UUID - usando repository pattern
-      const newDeposit = {
-        id: crypto.randomUUID(),
+      const deposit = await depositService.create({
         name: setupDeposit,
         address: 'Endereço Principal',
-        is_active: true,
+        active: true,
         color: 'blue'
-      };
-      
-      // ✅ v3.0: Salvar direto no Supabase
-      const { error: depositError } = await supabase.from('deposits').insert(newDeposit);
-      if (depositError) throw depositError;
+      });
 
-      // 2. Create Admin User usando Supabase direto
-      const newAdmin = {
-        id: crypto.randomUUID(),
+      const admin = await employeeService.create({
         name: setupName,
         role: 'GERENTE',
-        deposit_id: newDeposit.id,
-        is_active: true,
-        username: setupUser.trim(),
+        deposit_id: deposit.id,
+        active: true,
+        username: setupUser.trim().toLowerCase(),
         password: setupPass.trim(),
-        permissions: DASHBOARD_ITEMS.map(i => i.id) // Full access
-      };
-      
-      // ✅ v3.0: Salvar direto no Supabase
-      const { error: employeeError } = await supabase.from('employees').insert(newAdmin);
-      if (employeeError) throw employeeError;
+        permissions: DASHBOARD_ITEMS.map(i => i.id)
+      });
 
-      // 3. Auto Login
-      setTimeout(() => onLoginSuccess(newAdmin as any), 500);
+      onLoginSuccess({
+        id: admin.id,
+        nome: admin.name,
+        cargo: admin.role,
+        depositoId: admin.deposit_id,
+        ativo: admin.active,
+        username: admin.username,
+        password: admin.password,
+        permissoes: admin.permissions || [],
+      });
     } catch (err) {
-      console.error('Erro ao criar depósito:', err);
+      console.error('Erro ao configurar sistema:', err);
       setError('Erro ao configurar sistema. Tente novamente.');
       setIsLoading(false);
     }

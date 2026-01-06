@@ -1,8 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
-import { useLiveQuery, db, listEmployees } from '@/utils/legacyHelpers';
-// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
+import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { employeeService, depositService, type Database } from '@/services';
 import { 
   X, Users, UserPlus, Search, 
   MapPin, Truck, Shield, BadgeCheck,
@@ -11,9 +10,33 @@ import {
   Save, Phone, Lock, Eye, EyeOff,
   CheckSquare, Square, LayoutGrid, Ban, CheckCircle2
 } from 'lucide-react';
-import { Colaborador, Deposito } from '@/domain/types';
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+import { Colaborador, Deposit } from '@/domain/types';
 import { DASHBOARD_ITEMS } from '../constants';
+
+type EmployeeRow = Database['public']['Tables']['employees']['Row'];
+type DepositRow = Database['public']['Tables']['deposits']['Row'];
+
+const mapEmployeeToDomain = (emp: EmployeeRow): Colaborador => ({
+   id: emp.id,
+   nome: emp.name,
+   cargo: emp.role,
+   depositoId: emp.deposit_id,
+   ativo: emp.active,
+   telefone: undefined,
+   username: emp.username,
+   password: emp.password,
+   permissoes: emp.permissions || []
+});
+
+const mapDepositToDomain = (dep: DepositRow): Deposit => ({
+   id: dep.id,
+   nome: dep.name,
+   endereco: dep.address || undefined,
+   ativo: dep.active,
+   cor: dep.color || undefined,
+   require_stock_audit: dep.require_stock_audit,
+   free_shipping_min_value: dep.free_shipping_min_value || undefined
+});
 
 interface EmployeesModuleProps {
   onClose: () => void;
@@ -28,13 +51,32 @@ interface DriverStats {
 }
 
 export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ onClose }) => {
-   // -- Data State (Reactive via useLiveQuery) --
-   // ✅ Normalização de depositoId agora é feita automaticamente pelo repository
-   const liveEmployees = useLiveQuery(() => listEmployees(), []);
-   const liveDeposits = useLiveQuery(() => db.deposits.filter((d: any) => d.ativo !== false).toArray(), []);
-   
-   const employees = liveEmployees ?? [];
-   const deposits = liveDeposits ?? [];
+    // -- Data State (Supabase via Services) --
+    const [employees, setEmployees] = useState<Colaborador[]>([]);
+    const [deposits, setDeposits] = useState<Deposit[]>([]);
+    const [loading, setLoading] = useState(false);
+
+   const loadData = async () => {
+      setLoading(true);
+      try {
+         const [employeesData, depositsData] = await Promise.all([
+            employeeService.getAll(),
+            depositService.getAll()
+         ]);
+
+         setEmployees(employeesData.map(mapEmployeeToDomain));
+         setDeposits(depositsData.map(mapDepositToDomain));
+      } catch (error) {
+         console.error('Erro ao carregar colaboradores/depositos', error);
+         toast.error('Erro ao carregar colaboradores ou depósitos');
+      } finally {
+         setLoading(false);
+      }
+   };
+
+   useEffect(() => {
+      loadData();
+   }, []);
   
   // -- UI State --
   const [searchTerm, setSearchTerm] = useState('');
@@ -87,127 +129,94 @@ export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ onClose }) => 
       if (driver.cargo !== 'ENTREGADOR') return;
       setSelectedDriver(driver);
       try {
-         // Verifica se tem histórico no Dexie
-         const [orders, movements] = await Promise.all([
-           db.service_orders.where('entregadorId').equals(driver.id).count(),
-           db.stock_movements.where('usuarioId').equals(driver.id).count()
-         ]);
-         const hasHistory = orders > 0 || movements > 0;
-         
-         if (hasHistory) {
-            setDriverStats(generateMockStats(driver.id));
-         } else {
-            setDriverStats(null);
-         }
+         const hasHistory = await employeeService.hasHistory(driver.id);
+         setDriverStats(hasHistory ? generateMockStats(driver.id) : null);
       } catch (err) {
+         console.error('Erro ao verificar histórico do entregador', err);
          setDriverStats(null);
       }
   };
 
-  const handleSave = () => {
-    // ✅ VALIDAÇÕES OBRIGATÓRIAS
-    if (!form.nome?.trim()) return alert("O campo Nome é obrigatório.");
-    if (!form.cargo) return alert("O campo Cargo é obrigatório.");
-    if (!form.username?.trim()) return alert("O campo Nome de Usuário é obrigatório.");
+   const handleSave = async () => {
+      if (!form.nome?.trim()) return toast.error("O campo Nome é obrigatório.");
+      if (!form.cargo) return toast.error("O campo Cargo é obrigatório.");
+      if (!form.username?.trim()) return toast.error("O campo Nome de Usuário é obrigatório.");
     
-    // ⚠️ Validar depósito: obrigatório APENAS para cargos "locais" (não ENTREGADOR/GERENTE)
-    if (!isGlobalRole(form.cargo) && !form.depositoId) {
-      return alert("Selecione um depósito para este colaborador! Apenas ENTREGADOR e GERENTE têm acesso global.");
-    }
-
-    // ⚠️ Validar username único (não pode repetir)
-    const usernameNormalized = form.username.trim().toLowerCase();
-    const isUsernameExists = employees.some(
-      emp => emp.id !== form.id && emp.username?.trim().toLowerCase() === usernameNormalized
-    );
-    if (isUsernameExists) {
-      return alert(`❌ O nome de usuário "${form.username}" já existe! Cada nome de usuário deve ser único.`);
-    }
-
-    // ✅ Construção explícita do objeto
-    const newEmp: Colaborador = {
-      id: form.id || generateId(),
-      nome: form.nome.trim(),
-      cargo: form.cargo,
-      depositoId: form.depositoId ?? undefined, // ✅ Usa ?? para preservar null/undefined, mas não string vazia
-      telefone: form.telefone || '',
-      username: form.username.trim().toLowerCase(), // Normalizar para lowercase
-      password: form.password || '',
-      ativo: form.ativo ?? true,
-      permissoes: form.permissoes || []
-    };
-
-    console.log('💾 Salvando colaborador:', newEmp); // Debug: verificar o que está sendo salvo
-
-    // Salva no Dexie + Outbox (useLiveQuery atualizará automaticamente a UI)
-    upsertEmployee(newEmp).then(() => {
-      console.log('✅ Colaborador salvo com sucesso!');
-    }).catch(err => {
-      console.error('❌ Erro ao salvar colaborador:', err);
-      alert('Erro ao salvar colaborador.');
-    });
-    
-    setIsModalOpen(false);
-    setForm({ permissoes: [] });
-  };
-
-  const handleDelete = async (id: string) => {
-    // 1. Verificar TODAS as dependências no Dexie
-    const [
-      orderCountAsDriver,      // Como entregador
-      orderCountAsCreator,     // Como criador/atendente (usuarioId ou criado_por)
-      movementCount,           // Movimentações de estoque
-      cashFlowCount           // Entradas/saídas de caixa
-    ] = await Promise.all([
-      db.service_orders.where('entregadorId').equals(id).count(),
-      db.service_orders.where('usuarioId').equals(id).count(),
-      db.stock_movements.where('usuarioId').equals(id).count(),
-      db.cash_flow_entries.where('usuarioId').equals(id).count()
-    ]);
-    
-    const hasHistory = orderCountAsDriver > 0 || orderCountAsCreator > 0 || movementCount > 0 || cashFlowCount > 0;
-
-    console.log('🔍 Verificação de histórico:', {
-      colaborador: employees.find(e => e.id === id)?.nome,
-      orderCountAsDriver,
-      orderCountAsCreator,
-      movementCount,
-      cashFlowCount,
-      hasHistory
-    });
-
-    if (hasHistory) {
-      const detalhes = [
-        orderCountAsDriver > 0 ? `${orderCountAsDriver} entregas` : null,
-        orderCountAsCreator > 0 ? `${orderCountAsCreator} ordens criadas` : null,
-        movementCount > 0 ? `${movementCount} movimentações de estoque` : null,
-        cashFlowCount > 0 ? `${cashFlowCount} operações de caixa` : null
-      ].filter(Boolean).join(', ');
-      
-      if(!confirm(`Este colaborador possui histórico de movimentações:\n\n${detalhes}\n\nEle não pode ser excluído fisicamente para manter a integridade dos dados.\n\nDeseja DESATIVAR o acesso dele?`)) return;
-      
-      // Soft Delete (Deactivate)
-      const emp = employees.find(e => e.id === id);
-      if (emp) {
-        await upsertEmployee({ ...emp, ativo: false });
-        alert("Colaborador desativado com sucesso.");
+      const isGlobal = isGlobalRole(form.cargo);
+      if (!isGlobal && !form.depositoId) {
+         return toast.error("Selecione um depósito para este colaborador! Apenas ENTREGADOR e GERENTE têm acesso global.");
       }
-    } else {
-      if(!confirm("Este colaborador não possui histórico. Deseja EXCLUIR permanentemente o registro?")) return;
-      
-      // Hard Delete
-      await deleteEmployee(id);
-      if(selectedDriver?.id === id) setSelectedDriver(null);
-      alert("Colaborador excluído com sucesso.");
-    }
-  };
+
+      const usernameNormalized = form.username.trim().toLowerCase();
+      const isUsernameExists = employees.some(
+         emp => emp.id !== form.id && emp.username?.trim().toLowerCase() === usernameNormalized
+      );
+      if (isUsernameExists) {
+         return toast.error(`O nome de usuário "${form.username}" já existe!`);
+      }
+
+      const payload = {
+         name: form.nome.trim(),
+         role: form.cargo,
+         deposit_id: isGlobal ? null : form.depositoId!,
+         active: form.ativo ?? true,
+         username: usernameNormalized,
+         password: form.password || '',
+         permissions: form.permissoes || []
+      };
+
+      try {
+         if (form.id) {
+            await employeeService.update(form.id, payload);
+            toast.success('Colaborador atualizado com sucesso');
+         } else {
+            await employeeService.create(payload);
+            toast.success('Colaborador criado com sucesso');
+         }
+         setIsModalOpen(false);
+         setForm({ permissoes: [] });
+         loadData();
+      } catch (error: any) {
+         console.error('Erro ao salvar colaborador:', error);
+         toast.error(error?.message || 'Erro ao salvar colaborador');
+      }
+   };
+
+   const handleDelete = async (id: string) => {
+      try {
+         const hasHistory = await employeeService.hasHistory(id);
+         const emp = employees.find(e => e.id === id);
+
+         if (hasHistory) {
+            const label = emp?.nome ? `(${emp.nome})` : '';
+            if(!confirm(`Este colaborador ${label} possui histórico de movimentações e não pode ser excluído.\n\nDeseja DESATIVAR o acesso?`)) return;
+
+            await employeeService.deactivate(id);
+            toast.success('Colaborador desativado');
+         } else {
+            if(!confirm("Este colaborador não possui histórico. Deseja EXCLUIR permanentemente o registro?")) return;
+            await employeeService.delete(id);
+            if(selectedDriver?.id === id) setSelectedDriver(null);
+            toast.success('Colaborador excluído');
+         }
+
+         loadData();
+      } catch (error: any) {
+         console.error('Erro ao excluir/desativar colaborador', error);
+         toast.error(error?.message || 'Erro ao excluir colaborador');
+      }
+   };
 
   const handleReactivate = async (id: string) => {
     if(!confirm("Reativar acesso deste colaborador?")) return;
-    const emp = employees.find(e => e.id === id);
-    if (emp) {
-      await upsertEmployee({ ...emp, ativo: true });
-    }
+      try {
+         await employeeService.update(id, { active: true });
+         toast.success('Colaborador reativado');
+         loadData();
+      } catch (error: any) {
+         console.error('Erro ao reativar colaborador', error);
+         toast.error(error?.message || 'Erro ao reativar colaborador');
+      }
   }
 
   const handleFixUsersWithoutDeposit = async () => {
@@ -236,12 +245,16 @@ export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ onClose }) => 
     
     if (!confirm(msg)) return;
     
-    for (const user of problemUsers) {
-      console.log('🔧 Corrigindo usuário:', user.nome, 'de', user.depositoId, 'para', defaultDeposit.id);
-      await upsertEmployee({ ...user, depositoId: defaultDeposit.id });
-    }
-    
-    alert(`✅ ${problemUsers.length} usuário(s) corrigido(s) com sucesso!\n\n⚠️ Aguarde 10 segundos para sincronização com a nuvem, depois recarregue a página (F5).`);
+      try {
+         for (const user of problemUsers) {
+            await employeeService.update(user.id, { deposit_id: defaultDeposit.id });
+         }
+         toast.success(`${problemUsers.length} usuário(s) corrigido(s) com sucesso!`);
+         loadData();
+      } catch (error: any) {
+         console.error('Erro ao corrigir usuários sem depósito', error);
+         toast.error(error?.message || 'Erro ao corrigir usuários');
+      }
   }
 
   const handleEdit = (emp: Colaborador) => {

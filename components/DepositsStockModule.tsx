@@ -6,10 +6,12 @@ import {
   Box, Repeat, ShoppingBag, Tag
 } from 'lucide-react';
 import { Deposit, Colaborador, MovimentoEstoque, Product, StockMovementRule } from '@/domain/types';
-import { 
+import {
   upsertDeposit, deleteDeposit, listDeposits, listProducts, applyMovement,
   useLiveQuery, db,
 } from '@/utils/legacyHelpers';
+import { employeeService } from '@/services';
+import { toast } from 'sonner';
 
 // ============================================================================
 // TIPOS
@@ -154,6 +156,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     hasPendingOS: boolean;
     employees: Colaborador[];
   } | null>(null);
+  const [cloudEmployees, setCloudEmployees] = useState<Colaborador[]>([]);
   const [migrateToDepositId, setMigrateToDepositId] = useState<string>('');
   const [migrateStock, setMigrateStock] = useState<'migrate' | 'ignore' | null>(null);
   
@@ -173,6 +176,31 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   const activeDeposits = useMemo(() => deposits.filter(d => d.ativo !== false), [deposits]);
   
   const employees = useLiveQuery(() => db.employees.toArray()) ?? [];
+
+  useEffect(() => {
+    let mounted = true;
+    employeeService.getAll()
+      .then((rows) => {
+        if (!mounted) return;
+        const mapped = rows.map(row => ({
+          id: row.id,
+          nome: row.name,
+          cargo: row.role,
+          depositoId: row.deposit_id,
+          ativo: row.active,
+          username: row.username,
+          password: row.password,
+          permissoes: row.permissions || [],
+        } as Colaborador));
+        setCloudEmployees(mapped);
+      })
+      .catch((err) => {
+        console.error('Erro ao carregar colaboradores do Supabase', err);
+        toast.error('Erro ao carregar colaboradores (online)');
+      });
+
+    return () => { mounted = false; };
+  }, []);
   
   // Produtos para estoque (apenas ativos com track_stock)
   const products = useLiveQuery(() => db.products.filter(p => 
@@ -192,6 +220,8 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   // -------------------------------------------------------------------------
   const isGerente = currentUser?.cargo === 'GERENTE';
   
+  const employeesSource = cloudEmployees.length > 0 ? cloudEmployees : employees;
+
   const filteredDeposits = useMemo(() => {
     if (!searchTerm) return deposits;
     const term = searchTerm.toLowerCase();
@@ -1017,7 +1047,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                     </div>
                   ) : (
                     filteredDeposits.map(deposit => {
-                      const empCount = employees.filter(e => e.depositoId === deposit.id).length;
+                      const empCount = employeesSource.filter(e => e.depositoId === deposit.id).length;
                       const stockCount = Object.values(stockMap[deposit.id] || {}).reduce((a, b) => a + b, 0);
                       
                       return (
