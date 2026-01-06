@@ -63,6 +63,10 @@ const App: React.FC = () => {
     return (localStorage.getItem('gp_theme') as ThemeId) || 'light';
   });
 
+  // ⚠️ TODO v3.0: Reimplementar background customizado (sem storage local)
+  const backgroundImage = null;
+  const backgroundOpacity = 0.1;
+
   // Initialize System (Load Data from DB)
   useEffect(() => {
     const startSystem = async () => {
@@ -238,12 +242,12 @@ const App: React.FC = () => {
             backgroundImage={backgroundImage}
             backgroundOpacity={backgroundOpacity}
             onBackgroundImageChange={async (image) => {
-              setBackgroundImage(image ?? null);
-              await setThemeBackgroundImage(image ?? null);
+              // ⚠️ TODO v3.0: Implementar via Services (salvar no Supabase)
+              console.warn('Background customizado desabilitado na v3.0');
             }}
             onBackgroundOpacityChange={(value) => {
-              setBackgroundOpacity(value);
-              setThemeBackgroundOpacity(value);
+              // ⚠️ TODO v3.0: Implementar via Services (salvar no Supabase)
+              console.warn('Opacidade desabilitada na v3.0');
             }}
           />
         );

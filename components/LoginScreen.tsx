@@ -38,8 +38,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     
-    listEmployees().then((employees) => {
-      if (mounted) setIsFirstRun(employees.length === 0);
+    // ✅ v3.0: Buscar direto do Supabase
+    supabase.from('employees').select('*').then(({ data }) => {
+      if (mounted) setIsFirstRun(!data || data.length === 0);
     });
     
     return () => { 
@@ -101,41 +102,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
       let user: Colaborador | undefined;
       
-      // 1. Verificar se já existe localmente
-      const localEmployees = await listEmployees();
-      const localUser = localEmployees.find((u) => u.username?.trim().toLowerCase() === inputUser);
-      
-      // 2. Se tiver internet, buscar da nuvem
-      if (isOnline) {
-        const cloudUser = await fetchUserFromCloud(inputUser);
-        if (cloudUser) {
-          user = cloudUser;
-        } else if (!localUser) {
-          // Não existe nem local nem na nuvem
-          setError('Usuário não encontrado!');
-          setIsLoading(false);
-          return;
-        }
-      }
-      
-      // 3. Se não conseguiu da nuvem, usar local
-      if (!user) {
-        if (!localUser) {
-          setError('Usuário não encontrado! Primeiro login requer conexão com a internet.');
-          setIsLoading(false);
-          return;
-        }
-        user = localUser;
+      // ✅ v3.0: Buscar direto do Supabase (não há mais cache local)
+      if (!isOnline) {
+        setError('Sem conexão com a internet. Conecte-se e tente novamente.');
+        setIsLoading(false);
+        return;
       }
 
-      // 4. Verificar se está ativo
+      const cloudUser = await fetchUserFromCloud(inputUser);
+      if (cloudUser) {
+        user = cloudUser;
+      } else {
+        // Não existe na nuvem
+        setError('Usuário não encontrado!');
+        setIsLoading(false);
+        return;
+      }
+
+      // ✅ v3.0: Verificar se está ativo
       if (!user.ativo) {
         setError('Usuário inativo!');
         setIsLoading(false);
         return;
       }
 
-      // 5. ✅ REGRA: Apenas cargos globais (GERENTE/ENTREGADOR) podem não ter depositoId
+      // ✅ REGRA: Apenas cargos globais (GERENTE/ENTREGADOR) podem não ter depositoId
       const isGlobalRole = user.cargo === 'GERENTE' || user.cargo === 'ENTREGADOR';
       if (!isGlobalRole && !user.depositoId) {
         setError(`Usuário sem depósito vinculado! Cargo ${user.cargo} deve ter depósito definido. Contate o administrador.`);
@@ -179,11 +170,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         ativo: true,
         corIdentificacao: 'blue'
       };
-      await upsertDeposit(newDeposit); // ✅ CORRIGIDO: Salva no Dexie + Outbox
+      
+      // ✅ v3.0: Salvar direto no Supabase
+      const { error: depositError } = await supabase.from('deposits').insert(newDeposit);
+      if (depositError) throw depositError;
 
-      // 2. Create Admin User usando repository pattern
+      // 2. Create Admin User usando Supabase direto
       const newAdmin: Colaborador = {
-        id: crypto.randomUUID(), // ✅ CORRIGIDO: UUID válido
+        id: crypto.randomUUID(), // ✅ UUID válido
         nome: setupName,
         cargo: 'GERENTE',
         depositoId: newDeposit.id, // ✅ Vinculado ao depósito criado
@@ -192,7 +186,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         password: setupPass.trim(),
         permissoes: DASHBOARD_ITEMS.map(i => i.id) // Full access
       };
-      await upsertEmployee(newAdmin); // ✅ Salva no Dexie + Outbox
+      
+      // ✅ v3.0: Salvar direto no Supabase
+      const { error: employeeError } = await supabase.from('employees').insert(newAdmin);
+      if (employeeError) throw employeeError;
 
       // 3. Auto Login
       setTimeout(() => onLoginSuccess(newAdmin), 500);
