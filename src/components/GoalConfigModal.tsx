@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { db, generateId } from '../../src/domain/db';
-import { enqueueOutboxEvent } from '../../src/domain/sync/outbox';
+import { db, generateId } from '@/domain/db';
+import { enqueueOutboxEvent } from '@/domain/sync/outbox';
 import { FinancialSettings } from '../types';
 
 interface GoalConfigModalProps {

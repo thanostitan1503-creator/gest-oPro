@@ -15,9 +15,8 @@ import {
   Siren,
   CheckSquare,
   Cylinder,
-  ClipboardCheck,
   Palette,
-  Warehouse
+  Warehouse,
 } from 'lucide-react';
 import { DashboardItem } from './types';
 
@@ -43,13 +42,7 @@ export const DASHBOARD_ITEMS: DashboardItem[] = [
     color: 'text-green-600',
     bgColor: 'bg-green-100',
   },
-  {
-    id: 'contagem',
-    label: 'Contagem',
-    icon: ClipboardCheck,
-    color: 'text-teal-600',
-    bgColor: 'bg-teal-100',
-  },
+
   {
     id: 'financeiro',
     label: 'Financeiro',
@@ -72,7 +65,7 @@ export const DASHBOARD_ITEMS: DashboardItem[] = [
     bgColor: 'bg-gray-100',
   },
   {
-    id: 'estoque',
+    id: 'depositos-estoque',
     label: 'Depósitos & Estoque',
     icon: Warehouse,
     color: 'text-purple-600',

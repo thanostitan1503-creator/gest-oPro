@@ -10,6 +10,7 @@ export * from './stock.repo';
 export * from './receivables.repo';
 export * from './delivery.repo';
 export * from './deliveryZones.repo';
+export * from './zonePricing.repo';
 export * from './clients.repo';
 export * from './shift.repo';
 export * from './cashflow.repo';

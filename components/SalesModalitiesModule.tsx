@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Plus, Pencil, Trash2, Search, Settings, Smartphone, CheckCircle2, Banknote
 } from 'lucide-react';
-import { Maquininha, DepositoFisicoId } from '../src/domain/types';
-import { PaymentMethod } from '../src/types';
-import { Deposit } from '../src/domain/types';
+import { Maquininha, DepositoFisicoId } from '@/domain/types';
+import { PaymentMethod } from '@/types';
+import { Deposit } from '@/domain/types';
 import {
   deleteMachine,
   deletePaymentMethod,
@@ -13,7 +13,7 @@ import {
   upsertMachine,
   recordAudit,
   listDeposits,
-} from '../src/domain/repositories/index';
+} from '@/domain/repositories/index';
 import { PaymentMethodsModal } from './PaymentMethodsModal';
 import { PaymentMethodsList } from './PaymentMethodsList';
 

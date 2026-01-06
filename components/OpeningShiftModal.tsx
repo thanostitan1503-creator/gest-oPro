@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardCheck, Factory, AlertTriangle, Save } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useShift } from '../src/contexts/ShiftContext';
-import { db } from '../src/domain/db';
-import { getStockMapForDeposit } from '../src/domain/repositories/stock.repo';
-import { listProducts } from '../src/domain/repositories/products.repo';
-import type { Colaborador, Produto } from '../src/domain/types';
+import { useShift } from '@/contexts/ShiftContext';
+import { db } from '@/domain/db';
+import { getStockMapForDeposit } from '@/domain/repositories/stock.repo';
+import { listProducts } from '@/domain/repositories/products.repo';
+import type { Colaborador, Produto } from '@/domain/types';
 
 type OpeningShiftModalProps = {
   user: Colaborador;

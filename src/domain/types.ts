@@ -14,16 +14,18 @@ export type DepositoFisicoId = 'DEP1' | 'DEP2' | 'DEP3' | string;
 export type CentroFinanceiroId = DepositoFisicoId | 'PESSOAL';
 export type StatusOS = 'PENDENTE' | 'PENDENTE_ENTREGA' | 'EM_ANDAMENTO' | 'CONCLUIDA' | 'CANCELADA';
 
-// Status da Entrega (Máquina de Estados)
+// ⚠️ TIPOS DE ATENDIMENTO - APENAS 2 PERMITIDOS
+export type TipoAtendimento = 'BALCAO' | 'DELIVERY';
+
+// Status da Entrega (Máquina de Estados Simplificada)
+// Fluxo: CRIADA → PENDENTE_ENTREGA → EM_ROTA → CONCLUIDA | DEVOLVIDA | CANCELADA
 export type DeliveryStatus = 
-  | 'CRIADA'               // O.S criada, ainda não caiu no despacho
-  | 'AGUARDANDO_DESPACHO'  // Pronta para ser enviada
-  | 'ATRIBUIDA'            // Admin enviou, esperando aceite do motorista
-  | 'ACEITA'               // Motorista aceitou
-  | 'EM_ROTA'              // Motorista saiu para entrega
-  | 'ENTREGUE'             // Finalizada com sucesso
-  | 'FALHA_DEVOLVIDA'      // Falhou, produto voltou
-  | 'CANCELADA';           // Cancelada no admin
+  | 'CRIADA'               // O.S criada, ainda não saiu
+  | 'PENDENTE_ENTREGA'     // Aguardando entregador sair
+  | 'EM_ROTA'              // Entregador saiu para entrega
+  | 'CONCLUIDA'            // Entrega realizada com sucesso
+  | 'DEVOLVIDA'            // Entrega falhou, produto retornou
+  | 'CANCELADA';           // O.S. cancelada
 
 export type DriverStatus = 'OFFLINE' | 'DISPONIVEL' | 'PAUSADO' | 'OCUPADO';
 
@@ -33,9 +35,9 @@ export type StockMovementRule = 'SIMPLE' | 'EXCHANGE' | 'FULL';
 export type UserRole = 'ADMIN' | 'COLABORADOR' | 'ENTREGADOR';
 
 // ... (Previous types remain same) ...
-export type TipoMovimentoEstoque = 'ENTRADA' | 'SAIDA' | 'SUPRIMENTO_ENTRADA' | 'SANGRIA_SAIDA' | 'AJUSTE_CONTAGEM';
+export type TipoMovimentoEstoque = 'ENTRADA' | 'SAIDA' | 'SUPRIMENTO_ENTRADA' | 'SANGRIA_SAIDA' | 'AJUSTE_CONTAGEM' | 'CARGA_INICIAL';
 export type TipoMovimentoFinanceiro = 'ENTRADA' | 'SAIDA';
-export type OrigemMovimento = 'OS' | 'OS_CANCELAMENTO' | 'AJUSTE_MANUAL' | 'TELA_CONTAGEM_MOVIMENTACAO' | 'CONFIGURACAO' | 'DELIVERY';
+export type OrigemMovimento = 'OS' | 'OS_CANCELAMENTO' | 'AJUSTE_MANUAL' | 'TELA_CONTAGEM_MOVIMENTACAO' | 'CONFIGURACAO' | 'DELIVERY' | 'TRANSFERENCIA';
 
 export interface SaldoEstoque {
   depositoId: string; 
@@ -496,6 +498,14 @@ export type Product = {
   preco_venda: number;
   preco_padrao: number;
   marcacao: number; // Agora bate com a coluna 'marcacao'
+  
+  /**
+   * Preços por modalidade de venda (para produtos com movement_type='EXCHANGE')
+   * - preco_troca: preço quando cliente DEVOLVE o casco (só paga o gás)
+   * - preco_completa: preço quando cliente LEVA o casco (gás + vasilhame)
+   */
+  preco_troca?: number | null;
+  preco_completa?: number | null;
 
   // Booleans e chaves
   track_stock?: boolean;
@@ -523,6 +533,14 @@ export interface ItemOrdemServico {
   precoUnitario: number;
   modalidade: ModalidadeItem;
   isPrecoEspecial?: boolean;
+  /** 
+   * Modo de venda escolhido no momento da venda.
+   * Se o produto tem movement_type='EXCHANGE', o operador escolhe:
+   * - 'EXCHANGE' (TROCA): cliente devolve casco → +1 vazio
+   * - 'FULL' (COMPLETA): cliente leva casco → não entra vazio
+   * Se não especificado, usa o movement_type do produto.
+   */
+  sale_movement_type?: StockMovementRule | null;
 }
 
 export interface LogHistoricoOS {
@@ -568,8 +586,8 @@ export interface OrdemServico {
 
   // Operacional
   status: StatusOS;
-  statusEntrega?: DeliveryStatus; // Using the new robust status
-  tipoAtendimento: 'ENTREGA' | 'RETIRADA' | 'BALCAO';
+  statusEntrega?: DeliveryStatus;
+  tipoAtendimento: TipoAtendimento; // ⚠️ APENAS 'BALCAO' | 'DELIVERY'
   entregadorId?: string | null;
   observacoes?: string;
 

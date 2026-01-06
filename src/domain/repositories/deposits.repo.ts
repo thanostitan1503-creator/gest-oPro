@@ -1,7 +1,7 @@
 import { db, generateId } from '../db';
 import { Deposit } from '../types';
 import { enqueueOutboxEvent } from '../sync/outbox';
-import { normalizeDeposit } from '../../src/domain/utils/dataSanitizer';
+import { normalizeDeposit } from '@/domain/utils/dataSanitizer';
 
 export async function listDeposits(): Promise<Deposit[]> {
   const deposits = await db.deposits.toArray();

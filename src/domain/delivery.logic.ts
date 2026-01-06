@@ -2,11 +2,14 @@
 import { DeliveryJob, OrdemServico, DeliveryStatus, Colaborador } from './types';
 import { getDeliveryJob, listDeliveryJobs, upsertDeliveryJob } from './repositories/delivery.repo';
 import { updateServiceOrderStatus } from './repositories/serviceOrders.repo';
-import { updateDriverHeartbeat } from './driverPresence.logic';
 
 // Helper UUID
 const uuid = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
 
+/**
+ * Cria um DeliveryJob a partir de uma Ordem de Serviço DELIVERY
+ * Status inicial: PENDENTE_ENTREGA
+ */
 export async function createDeliveryJobFromOS(os: OrdemServico): Promise<DeliveryJob> {
   const itemsStr = os.itens.map(i => `${i.quantidade}x ${i.produtoId}`).join(', ');
   
@@ -14,7 +17,7 @@ export async function createDeliveryJobFromOS(os: OrdemServico): Promise<Deliver
     id: os.id || uuid(),
     osId: os.id,
     depositoId: os.depositoId,
-    status: 'AGUARDANDO_DESPACHO',
+    status: 'PENDENTE_ENTREGA', // ✅ Status simplificado
     customerName: os.clienteNome,
     customerPhone: os.clienteTelefone,
     address: {
@@ -24,7 +27,7 @@ export async function createDeliveryJobFromOS(os: OrdemServico): Promise<Deliver
     },
     itemsSummary: itemsStr,
     totalValue: os.total,
-    paymentMethod: os.pagamentos[0]?.formaPagamentoId || 'Desconhecido', // Simplificação
+    paymentMethod: os.pagamentos[0]?.formaPagamentoId || 'Desconhecido',
     observation: os.observacoes
   };
 
@@ -32,69 +35,14 @@ export async function createDeliveryJobFromOS(os: OrdemServico): Promise<Deliver
   return job;
 }
 
-export async function assignJobToDriver(jobId: string, driverId: string): Promise<DeliveryJob | null> {
-  const job = await getDeliveryJob(jobId);
-  
-  if (!job) return null;
-  if (job.status !== 'AGUARDANDO_DESPACHO' && job.status !== 'FALHA_DEVOLVIDA') return null; // Can only assign if pending
-
-  const updated: DeliveryJob = {
-    ...job,
-    status: 'ATRIBUIDA',
-    assignedDriverId: driverId,
-    assignedAt: Date.now(),
-    refusalReason: undefined // Clear previous refusal if any
-  };
-
-  await upsertDeliveryJob(updated);
-  
-  // Update OS Status link
-  await updateServiceOrderStatus(job.osId, 'PENDENTE_ENTREGA', `Atribuído ao entregador ${driverId}`);
-  
-  return updated;
-}
-
-export async function acceptJob(jobId: string, driver: Colaborador): Promise<DeliveryJob | null> {
-  const job = await getDeliveryJob(jobId);
-  
-  if (!job || job.status !== 'ATRIBUIDA' || job.assignedDriverId !== driver.id) return null;
-
-  const updated: DeliveryJob = {
-    ...job,
-    status: 'ACEITA',
-    acceptedAt: Date.now()
-  };
-
-  await upsertDeliveryJob(updated);
-  
-  // Update Driver Presence to BUSY (Ocupado)
-  await updateDriverHeartbeat(driver, undefined, undefined, 'OCUPADO');
-
-  return updated;
-}
-
-export async function refuseJob(jobId: string, driverId: string, reason: string): Promise<DeliveryJob | null> {
-  const job = await getDeliveryJob(jobId);
-  
-  if (!job || job.status !== 'ATRIBUIDA') return null;
-
-  const updated: DeliveryJob = {
-    ...job,
-    status: 'AGUARDANDO_DESPACHO', // Return to pool
-    assignedDriverId: undefined, // Unassign
-    assignedAt: undefined,
-    refusedAt: Date.now(),
-    refusalReason: `${reason} (por ${driverId})`
-  };
-
-  await upsertDeliveryJob(updated);
-  return updated;
-}
-
+/**
+ * Inicia a rota de entrega
+ * PENDENTE_ENTREGA → EM_ROTA
+ */
 export async function startRoute(jobId: string): Promise<DeliveryJob | null> {
   const job = await getDeliveryJob(jobId);
   
-  if (!job || job.status !== 'ACEITA') return null;
+  if (!job || job.status !== 'PENDENTE_ENTREGA') return null;
 
   const updated: DeliveryJob = {
     ...job,
@@ -108,6 +56,10 @@ export async function startRoute(jobId: string): Promise<DeliveryJob | null> {
   return updated;
 }
 
+/**
+ * Completa a entrega com sucesso
+ * EM_ROTA → CONCLUIDA
+ */
 export async function completeJob(jobId: string): Promise<DeliveryJob | null> {
   const job = await getDeliveryJob(jobId);
   
@@ -115,16 +67,43 @@ export async function completeJob(jobId: string): Promise<DeliveryJob | null> {
 
   const updated: DeliveryJob = {
     ...job,
-    status: 'ENTREGUE',
+    status: 'CONCLUIDA',
     completedAt: Date.now()
   };
 
   await upsertDeliveryJob(updated);
-  await updateServiceOrderStatus(job.osId, 'CONCLUIDA', 'Entrega finalizada pelo App');
+  await updateServiceOrderStatus(job.osId, 'CONCLUIDA', 'Entrega finalizada');
 
   return updated;
 }
 
+/**
+ * Marca entrega como devolvida (falhou)
+ * EM_ROTA → DEVOLVIDA
+ */
+export async function returnJob(jobId: string, reason: string): Promise<DeliveryJob | null> {
+  const job = await getDeliveryJob(jobId);
+  
+  if (!job || job.status !== 'EM_ROTA') return null;
+
+  const updated: DeliveryJob = {
+    ...job,
+    status: 'DEVOLVIDA',
+    refusalReason: reason,
+    completedAt: Date.now()
+  };
+
+  await upsertDeliveryJob(updated);
+  // O.S. volta para PENDENTE para poder ser reenviada
+  await updateServiceOrderStatus(job.osId, 'PENDENTE', `Entrega devolvida: ${reason}`);
+
+  return updated;
+}
+
+/**
+ * Cancela a entrega
+ * Qualquer status → CANCELADA
+ */
 export async function cancelJob(jobId: string, reason: string): Promise<DeliveryJob | null> {
   const job = await getDeliveryJob(jobId);
   
@@ -137,30 +116,33 @@ export async function cancelJob(jobId: string, reason: string): Promise<Delivery
   };
 
   await upsertDeliveryJob(updated);
-  await updateServiceOrderStatus(job.osId, 'CANCELADA', `Cancelado via Despacho: ${reason}`);
+  await updateServiceOrderStatus(job.osId, 'CANCELADA', `Cancelado: ${reason}`);
   return updated;
 }
 
 /**
- * Checks for jobs that have been assigned but not accepted within timeout (e.g. 60s).
- * Reverts them to waiting pool.
+ * Funções legadas mantidas para compatibilidade - redirecionam para novo fluxo
+ * @deprecated Use startRoute, completeJob, returnJob, cancelJob
  */
+export async function assignJobToDriver(jobId: string, driverId: string): Promise<DeliveryJob | null> {
+  // No novo fluxo simplificado, não há atribuição por entregador
+  // O operador controla tudo manualmente pelo painel
+  console.warn('assignJobToDriver está deprecated. Use startRoute para iniciar entrega.');
+  return startRoute(jobId);
+}
+
+export async function acceptJob(jobId: string, driver: Colaborador): Promise<DeliveryJob | null> {
+  console.warn('acceptJob está deprecated. Use startRoute para iniciar entrega.');
+  return startRoute(jobId);
+}
+
+export async function refuseJob(jobId: string, driverId: string, reason: string): Promise<DeliveryJob | null> {
+  console.warn('refuseJob está deprecated. Use returnJob ou cancelJob.');
+  return returnJob(jobId, reason);
+}
+
 export async function checkDeliveryTimeouts() {
-  const jobs = await listDeliveryJobs();
-  const now = Date.now();
-
-  const timedOut = jobs.filter(
-    (j) => j.status === 'ATRIBUIDA' && j.assignedAt && now - j.assignedAt > 60000
-  );
-
-  for (const job of timedOut) {
-    const updated: DeliveryJob = {
-      ...job,
-      status: 'AGUARDANDO_DESPACHO' as DeliveryStatus,
-      assignedDriverId: undefined,
-      assignedAt: undefined,
-      refusalReason: 'Timeout: Motorista não aceitou a tempo'
-    };
-    await upsertDeliveryJob(updated);
-  }
+  // No novo fluxo simplificado, não há timeout de aceite
+  // Mantido apenas para compatibilidade
+  return;
 }

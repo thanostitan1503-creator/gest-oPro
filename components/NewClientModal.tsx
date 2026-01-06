@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { X, User, Phone, Calendar, CreditCard, Save, MapPin, Map } from 'lucide-react';
-import { db } from '../src/domain/db';
+import { db } from '@/domain/db';
 
 interface NewClientModalProps {
   onClose: () => void;

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bike, Zap, Store, Monitor, Crown, Heart, Package } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { supabase } from '../../../src/domain/supabaseClient';
-import { db } from '../../../src/domain/db';
+import { supabase } from '@/domain/supabaseClient';
+import { db } from '@/domain/db';
 import type { AuditDashboardStats } from '../../types/audit';
 
 const formatCurrency = (value: number) =>

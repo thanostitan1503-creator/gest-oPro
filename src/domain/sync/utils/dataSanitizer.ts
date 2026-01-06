@@ -462,26 +462,160 @@ export function toSupabaseFormat(localEntity: any, tableName?: string): any {
   // 4️⃣ PRODUCTS (Produto)
   // ═══════════════════════════════════════════════════════════════
   if (tableName === 'products') {
+    // Aliases/campos legados (PT/camelCase) -> snake_case (Supabase)
+    if (payload.returnProductId !== undefined && payload.return_product_id === undefined) {
+      payload.return_product_id = payload.returnProductId;
+      delete payload.returnProductId;
+    }
+    if (payload.produtoCascoId !== undefined && payload.return_product_id === undefined) {
+      payload.return_product_id = payload.produtoCascoId;
+      delete payload.produtoCascoId;
+    }
+    if (payload.produto_casco_id !== undefined && payload.return_product_id === undefined) {
+      payload.return_product_id = payload.produto_casco_id;
+      delete payload.produto_casco_id;
+    }
+    if (payload.movimento_tipo !== undefined && payload.movement_type === undefined) {
+      payload.movement_type = payload.movimento_tipo;
+      delete payload.movimento_tipo;
+    }
+    if (payload.movimentoTipo !== undefined && payload.movement_type === undefined) {
+      payload.movement_type = payload.movimentoTipo;
+      delete payload.movimentoTipo;
+    }
+    if (payload.trackStock !== undefined && payload.track_stock === undefined) {
+      payload.track_stock = payload.trackStock;
+      delete payload.trackStock;
+    }
+    if (payload.isDeliveryFee !== undefined && payload.is_delivery_fee === undefined) {
+      payload.is_delivery_fee = payload.isDeliveryFee;
+      delete payload.isDeliveryFee;
+    }
+    if (payload.productGroup !== undefined && payload.product_group === undefined) {
+      payload.product_group = payload.productGroup;
+      delete payload.productGroup;
+    }
+    if (payload.tracksEmpties !== undefined && payload.tracks_empties === undefined) {
+      payload.tracks_empties = payload.tracksEmpties;
+      delete payload.tracksEmpties;
+    }
+    if (payload.imagemUrl !== undefined && payload.imagem_url === undefined) {
+      payload.imagem_url = payload.imagemUrl;
+      delete payload.imagemUrl;
+    }
+    if (payload.precoVenda !== undefined && payload.preco_venda === undefined) {
+      payload.preco_venda = payload.precoVenda;
+      delete payload.precoVenda;
+    }
+    if (payload.precoCusto !== undefined && payload.preco_custo === undefined) {
+      payload.preco_custo = payload.precoCusto;
+      delete payload.precoCusto;
+    }
+    if (payload.precoTroca !== undefined && payload.preco_troca === undefined) {
+      payload.preco_troca = payload.precoTroca;
+      delete payload.precoTroca;
+    }
+    if (payload.precoCompleta !== undefined && payload.preco_completa === undefined) {
+      payload.preco_completa = payload.precoCompleta;
+      delete payload.precoCompleta;
+    }
+
+    // Nome e código
     if (payload.nome !== undefined) {
       payload.name = payload.nome;
       delete payload.nome;
     }
+    if (payload.codigo !== undefined) {
+      payload.code = payload.codigo;
+      delete payload.codigo;
+    }
+    
+    // Status ativo
     if (payload.ativo !== undefined) {
       payload.is_active = payload.ativo;
       payload.active = payload.ativo;
       delete payload.ativo;
     }
+    
+    // Descrição
     if (payload.descricao !== undefined) {
       payload.description = payload.descricao;
       delete payload.descricao;
     }
-    if (payload.tipo !== undefined && payload.type === undefined) {
-      payload.type = payload.tipo;
+    
+    // Tipo - SEMPRE converter e remover o campo em português
+    if (payload.tipo !== undefined) {
+      payload.type = payload.type ?? payload.tipo;
+      delete payload.tipo;
     }
+    
+    // Unidade
+    if (payload.unidade !== undefined) {
+      payload.unit = payload.unidade;
+      delete payload.unidade;
+    }
+    
+    // Imagem
     if (payload.imagem_url !== undefined) {
       payload.image_url = payload.imagem_url;
       delete payload.imagem_url;
     }
+    
+    // Preços
+    if (payload.preco_custo !== undefined) {
+      payload.cost_price = payload.preco_custo;
+      delete payload.preco_custo;
+    }
+    if (payload.preco_venda !== undefined) {
+      payload.sale_price = payload.preco_venda;
+      delete payload.preco_venda;
+    }
+    if (payload.preco_padrao !== undefined) {
+      payload.sale_price = payload.sale_price ?? payload.preco_padrao;
+      delete payload.preco_padrao;
+    }
+    if (payload.preco_troca !== undefined) {
+      payload.exchange_price = payload.preco_troca;
+      delete payload.preco_troca;
+    }
+    if (payload.preco_completa !== undefined) {
+      payload.full_price = payload.preco_completa;
+      delete payload.preco_completa;
+    }
+    
+    // Markup/Marcação
+    if (payload.marcacao !== undefined) {
+      payload.markup = payload.marcacao;
+      delete payload.marcacao;
+    }
+    
+    // Grupo de produto
+    if (payload.product_group !== undefined) {
+      // Já está em inglês, manter
+    }
+    
+    // Rastreia estoque
+    if (payload.tracks_empties !== undefined) {
+      // Já está em inglês, manter
+    }
+    
+    // ⚠️ Campos que NÃO devem ir para o Supabase (são calculados ou locais)
+    delete payload.current_stock;      // Saldo é calculado via stock_movements
+    delete payload.quantidade_atual;   // Alias de current_stock
+    delete payload.estoque_atual;      // Alias de current_stock
+    
+    // ⚠️ Garantir que campos em português foram removidos
+    delete payload.tipo;               // Deve ser 'type'
+    delete payload.nome;               // Deve ser 'name'
+    delete payload.ativo;              // Deve ser 'is_active'
+    delete payload.descricao;          // Deve ser 'description'
+    delete payload.unidade;            // Deve ser 'unit'
+    delete payload.marcacao;           // Deve ser 'markup'
+    delete payload.preco_venda;        // Deve ser 'sale_price'
+    delete payload.preco_custo;        // Deve ser 'cost_price'
+    delete payload.preco_padrao;       // Deve ser 'sale_price'
+    delete payload.preco_troca;        // Deve ser 'exchange_price'
+    delete payload.preco_completa;     // Deve ser 'full_price'
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -524,6 +658,49 @@ export function toSupabaseFormat(localEntity: any, tableName?: string): any {
       payload.discount_value = payload.descontoValor;
       delete payload.descontoValor;
     }
+    // Tipo de Atendimento
+    if (payload.tipoAtendimento !== undefined) {
+      payload.service_type = payload.tipoAtendimento;
+      delete payload.tipoAtendimento;
+    }
+    // Status da entrega
+    if (payload.statusEntrega !== undefined) {
+      payload.delivery_status = payload.statusEntrega;
+      delete payload.statusEntrega;
+    }
+    // Taxa de entrega
+    if (payload.taxaEntrega !== undefined) {
+      payload.delivery_fee = payload.taxaEntrega;
+      delete payload.taxaEntrega;
+    }
+    // Zona de entrega
+    if (payload.zonaId !== undefined) {
+      payload.zone_id = payload.zonaId;
+      delete payload.zonaId;
+    }
+    // Setor de entrega
+    if (payload.setorId !== undefined) {
+      payload.sector_id = payload.setorId;
+      delete payload.setorId;
+    }
+    // Timestamps
+    if (payload.dataHoraCriacao !== undefined) {
+      payload.created_at = payload.dataHoraCriacao;
+      delete payload.dataHoraCriacao;
+    }
+    if (payload.dataHoraConclusao !== undefined) {
+      payload.completed_at = payload.dataHoraConclusao;
+      delete payload.dataHoraConclusao;
+    }
+    // Operador
+    if (payload.operadorId !== undefined) {
+      payload.operator_id = payload.operadorId;
+      delete payload.operadorId;
+    }
+    if (payload.operadorNome !== undefined) {
+      payload.operator_name = payload.operadorNome;
+      delete payload.operadorNome;
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -547,12 +724,89 @@ export function toSupabaseFormat(localEntity: any, tableName?: string): any {
       delete payload.usuarioNome;
     }
     if (payload.dataHora !== undefined) {
-      payload.timestamp = payload.dataHora;
+      payload.created_at = payload.dataHora;
       delete payload.dataHora;
+      delete payload.timestamp; // Remove se existir
     }
     if (payload.referenciaId !== undefined) {
       payload.reference_id = payload.referenciaId;
       delete payload.referenciaId;
+    }
+    // Mapeamentos adicionais para stock_movements
+    if (payload.quantidade !== undefined) {
+      payload.quantity = payload.quantidade;
+      delete payload.quantidade;
+    }
+    if (payload.motivo !== undefined && payload.reason === undefined) {
+      payload.reason = payload.motivo;
+      delete payload.motivo;
+    }
+    if (payload.tipo !== undefined && payload.origin === undefined) {
+      payload.origin = payload.tipo; // Guarda o tipo original
+      delete payload.tipo;
+    }
+    // Remove campos que não existem na tabela Supabase
+    delete payload.meta;
+    delete payload.origem;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // 6.1 SERVICE_ORDER_ITEMS (Itens da Ordem de Serviço)
+  // ═══════════════════════════════════════════════════════════════
+  if (tableName === 'service_order_items') {
+    if (payload.ordemServicoId !== undefined) {
+      payload.service_order_id = payload.ordemServicoId;
+      delete payload.ordemServicoId;
+    }
+    if (payload.produtoId !== undefined) {
+      payload.product_id = payload.produtoId;
+      delete payload.produtoId;
+    }
+    if (payload.produtoNome !== undefined) {
+      payload.product_name = payload.produtoNome;
+      delete payload.produtoNome;
+    }
+    if (payload.quantidade !== undefined) {
+      payload.quantity = payload.quantidade;
+      delete payload.quantidade;
+    }
+    if (payload.precoUnitario !== undefined) {
+      payload.unit_price = payload.precoUnitario;
+      delete payload.precoUnitario;
+    }
+    if (payload.subtotal !== undefined) {
+      // já está em inglês
+    }
+    // ⚠️ CRÍTICO: sale_movement_type (escolhido na venda)
+    // Já está em inglês, não precisa traduzir
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // 6.2 SERVICE_ORDER_PAYMENTS (Pagamentos da OS)
+  // ═══════════════════════════════════════════════════════════════
+  if (tableName === 'service_order_payments') {
+    if (payload.ordemServicoId !== undefined) {
+      payload.service_order_id = payload.ordemServicoId;
+      delete payload.ordemServicoId;
+    }
+    if (payload.formaPagamento !== undefined) {
+      payload.payment_method = payload.formaPagamento;
+      delete payload.formaPagamento;
+    }
+    if (payload.valor !== undefined) {
+      payload.amount = payload.valor;
+      delete payload.valor;
+    }
+    if (payload.bandeira !== undefined) {
+      payload.card_brand = payload.bandeira;
+      delete payload.bandeira;
+    }
+    if (payload.nsu !== undefined) {
+      // já está em inglês
+    }
+    if (payload.maquinaId !== undefined) {
+      payload.machine_id = payload.maquinaId;
+      delete payload.maquinaId;
     }
   }
 

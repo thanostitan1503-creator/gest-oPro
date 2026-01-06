@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { Cylinder, Lock, User, ArrowRight, Loader2, Save, Factory, Wifi, WifiOff } from 'lucide-react';
-import { listEmployees, upsertEmployee } from '../src/domain/repositories/employees.repo';
-import { upsertDeposit } from '../src/domain/repositories/deposits.repo';
-import { Colaborador, Deposito } from '../src/domain/types';
+import { listEmployees, upsertEmployee } from '@/domain/repositories/employees.repo';
+import { upsertDeposit } from '@/domain/repositories/deposits.repo';
+import { Colaborador, Deposito } from '@/domain/types';
 import { DASHBOARD_ITEMS } from '../constants';
-import { supabase } from '../src/domain/supabaseClient';
-import { db } from '../src/domain/db';
+import { supabase } from '@/domain/supabaseClient';
+import { db } from '@/domain/db';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: Colaborador) => void;
@@ -171,9 +171,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
 
     try {
-      // 1. Create Default Deposit with proper ID - usando repository pattern
+      // 1. Create Default Deposit with proper UUID - usando repository pattern
       const newDeposit: Deposito = {
-        id: 'DEP1', // ✅ Fixed: Using consistent ID
+        id: crypto.randomUUID(), // ✅ CORRIGIDO: UUID válido
         nome: setupDeposit,
         endereco: 'Endereço Principal',
         ativo: true,
@@ -183,7 +183,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
       // 2. Create Admin User usando repository pattern
       const newAdmin: Colaborador = {
-        id: `COL-${Date.now()}`,
+        id: crypto.randomUUID(), // ✅ CORRIGIDO: UUID válido
         nome: setupName,
         cargo: 'GERENTE',
         depositoId: newDeposit.id, // ✅ Vinculado ao depósito criado

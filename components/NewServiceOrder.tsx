@@ -13,8 +13,8 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { NewClientModal } from './NewClientModal';
 import { ServiceOrderItems } from './ServiceOrderItems';
-import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '../src/domain/types';
-import { PaymentMethod } from '../src/types';
+import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '@/domain/types';
+import { PaymentMethod } from '@/types';
 import {
   listClients,
   upsertClient,
@@ -26,11 +26,11 @@ import {
   updateServiceOrderStatus,
   listPaymentMethods,
   listEmployees,
-} from '../src/domain/repositories/index';
-import { db } from '../src/domain/db';
-import { normalizeDepositId } from '../src/domain/utils/dataSanitizer';
-import { createDeliveryJobFromOS } from '../src/domain/delivery.logic';
-import { getEmployees } from '../src/domain/storage';
+} from '@/domain/repositories/index';
+import { db } from '@/domain/db';
+import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
+import { createDeliveryJobFromOS } from '@/domain/delivery.logic';
+import { getEmployees } from '@/domain/storage';
 
 const getSessionUserName = () => {
   if (typeof localStorage === 'undefined') return null;
@@ -287,6 +287,8 @@ interface OrderItem {
   quantidade: number;
   precoUnitario: number;
   tipo: string;
+  /** Modo de venda escolhido: EXCHANGE (troca) ou FULL (completa) */
+  sale_movement_type?: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null;
 }
 
 interface PaymentItem {
@@ -450,7 +452,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   }, [availableDeposits, availableDrivers]);
   
   // -- Form Header State --
-  const [serviceType, setServiceType] = useState<'ENTREGA' | 'RETIRADA' | 'BALCAO'>('ENTREGA');
+  const [serviceType, setServiceType] = useState<'BALCAO' | 'DELIVERY'>('DELIVERY');
   const [observations, setObservations] = useState('');
   const [dateTime, setDateTime] = useState(() => new Date().toISOString().slice(0, 16));
   const [statusView, setStatusView] = useState('Pendente');
@@ -474,6 +476,10 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   // -- State: Cart --
   const [items, setItems] = useState<OrderItem[]>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
+  
+  // -- State: Sale Mode Modal (TROCA/COMPLETA) --
+  const [showSaleModeModal, setShowSaleModeModal] = useState(false);
+  const [pendingProduct, setPendingProduct] = useState<Produto | null>(null);
   
   // -- State: Payments --
   const [payments, setPayments] = useState<PaymentItem[]>([]);
@@ -597,7 +603,8 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
           nome: prod?.nome || (isFeeItem ? DELIVERY_FEE_NAME : 'Item removido'),
           quantidade: i.quantidade,
           precoUnitario: i.precoUnitario,
-          tipo: prod && isServiceProduct(prod) ? 'SERVICO' : prod?.tipo || 'OUTRO'
+          tipo: prod && isServiceProduct(prod) ? 'SERVICO' : prod?.tipo || 'OUTRO',
+          sale_movement_type: (i as any).sale_movement_type ?? null, // Preservar modo de venda
         };
       });
       setItems(loadedItems);
@@ -646,7 +653,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     if (nextName && nextName !== zone) setZone(nextName);
   }, [zoneTouched, zoneMatchFromAddress, zoneId, zone]);
 
-  const isPickupService = serviceType !== 'ENTREGA';
+  const isPickupService = serviceType !== 'DELIVERY';
 
   useEffect(() => {
     if (isPickupService && employeeId) {
@@ -673,7 +680,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   const showChange = computedChange > 0 && hasCashPayment;
 
   useEffect(() => {
-    if (serviceType !== 'ENTREGA') {
+    if (serviceType !== 'DELIVERY') {
       if (deliveryFee !== 0) setDeliveryFee(0);
       if (zonePricingNotice) setZonePricingNotice(null);
       if (deliveryFeeManualOverride) setDeliveryFeeManualOverride(false);
@@ -753,7 +760,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     setItems((prev) => {
       const existing = prev.find((item) => item.produtoId === deliveryFeeProductId);
       const shouldRemove =
-        serviceType !== 'ENTREGA' ||
+        serviceType !== 'DELIVERY' ||
         deliveryFeeManualOverride;
 
       if (shouldRemove) {
@@ -907,7 +914,12 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
         ? ['(Sem itens)']
         : items.map((item) => {
             const totalItem = item.quantidade * item.precoUnitario;
-            const left = `${item.quantidade}x ${item.nome}`;
+            const modeLabel = item.sale_movement_type === 'EXCHANGE' 
+              ? ' (TROCA)' 
+              : item.sale_movement_type === 'FULL' 
+                ? ' (COMPLETA)' 
+                : '';
+            const left = `${item.quantidade}x ${item.nome}${modeLabel}`;
             const right = `R$ ${formatMoney(totalItem)}`;
             return formatReceiptLine(left, right, 36);
           });
@@ -973,21 +985,83 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     })();
   };
 
-  const handleAddItem = (prod: Produto) => {
-    const existingItem = items.find(i => i.produtoId === prod.id);
+  /**
+   * Verifica se o produto requer escolha de modo de venda (TROCA ou COMPLETA).
+   * Produtos com movement_type='EXCHANGE' permitem escolha no momento da venda.
+   */
+  const requiresSaleModeChoice = (prod: Produto): boolean => {
+    const mt = String(prod.movement_type ?? '').toUpperCase();
+    return mt === 'EXCHANGE';
+  };
+
+  /**
+   * Adiciona item real ao carrinho após escolha do modo de venda.
+   * Usa o preço correto baseado na modalidade:
+   * - EXCHANGE (TROCA): usa preco_troca se definido
+   * - FULL (COMPLETA): usa preco_completa se definido
+   * - Fallback: preco_padrao
+   */
+  const addItemToCart = (prod: Produto, saleMode: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null) => {
+    const existingItem = items.find(i => i.produtoId === prod.id && i.sale_movement_type === saleMode);
     if (existingItem) {
       handleUpdateQuantity(existingItem.id, existingItem.quantidade + 1);
       return;
     }
+    
+    // Determinar preço baseado na modalidade de venda
+    let precoFinal = prod.preco_padrao;
+    if (saleMode === 'EXCHANGE') {
+      // TROCA: cliente devolve casco → usa preco_troca
+      precoFinal = (prod as any).preco_troca ?? prod.preco_padrao;
+    } else if (saleMode === 'FULL') {
+      // COMPLETA: cliente leva casco → usa preco_completa  
+      precoFinal = (prod as any).preco_completa ?? prod.preco_padrao;
+    }
+    
     const newItem: OrderItem = {
       id: crypto.randomUUID(),
       produtoId: prod.id,
       nome: prod.nome,
       quantidade: 1,
-      precoUnitario: prod.preco_padrao,
-      tipo: prod.tipo
+      precoUnitario: precoFinal,
+      tipo: prod.tipo,
+      sale_movement_type: saleMode
     };
     setItems([...items, newItem]);
+  };
+
+  /**
+   * Handler chamado ao selecionar um produto.
+   * Se for produto EXCHANGE, abre modal de escolha TROCA/COMPLETA.
+   */
+  const handleAddItem = (prod: Produto) => {
+    // Se produto requer escolha de modo, abre modal
+    if (requiresSaleModeChoice(prod)) {
+      setPendingProduct(prod);
+      setShowSaleModeModal(true);
+      return;
+    }
+    
+    // Produto simples: adiciona direto
+    addItemToCart(prod, null);
+  };
+
+  /**
+   * Handler do modal de modo de venda - confirma escolha.
+   */
+  const handleSaleModeConfirm = (mode: 'EXCHANGE' | 'FULL') => {
+    if (!pendingProduct) return;
+    addItemToCart(pendingProduct, mode);
+    setPendingProduct(null);
+    setShowSaleModeModal(false);
+  };
+
+  /**
+   * Handler do modal de modo de venda - cancela.
+   */
+  const handleSaleModeCancel = () => {
+    setPendingProduct(null);
+    setShowSaleModeModal(false);
   };
 
   const handleUpdateQuantity = (itemId: string, newQty: number | string) => {
@@ -1150,7 +1224,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       alert('Selecione um deposito para a O.S.');
       return;
     }
-    if (serviceType === 'ENTREGA' && !employeeId) {
+    if (serviceType === 'DELIVERY' && !employeeId) {
       alert('Selecione um entregador para entrega.');
       return;
     }
@@ -1165,6 +1239,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
         quantidade: i.quantidade,
         precoUnitario: i.precoUnitario,
         modalidade: isFeeItem ? 'SERVICO' : 'VENDA',
+        sale_movement_type: i.sale_movement_type ?? null, // Modo de venda escolhido
       };
     });
 
@@ -1176,8 +1251,8 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
 
     // Determinar Status Inicial
     let finalStatus: StatusOS = 'PENDENTE';
-    // Se for ENTREGA, vai para o fluxo de despacho
-    if (serviceType === 'ENTREGA') {
+    // Se for DELIVERY, vai para o fluxo de despacho
+    if (serviceType === 'DELIVERY') {
       finalStatus = 'PENDENTE_ENTREGA';
     }
 
@@ -1217,7 +1292,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     await upsertServiceOrder({ ...orderData, historico });
 
     // 2. Create Delivery Job if needed
-    if (serviceType === 'ENTREGA' && !initialData) {
+    if (serviceType === 'DELIVERY' && !initialData) {
       await createDeliveryJobFromOS(orderData);
     }
 
@@ -1257,11 +1332,10 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
                 <label className="font-semibold text-gray-700">Tipo de atendimento:</label>
                 <select
                   value={serviceType}
-                  onChange={(e) => setServiceType(e.target.value as any)}
+                  onChange={(e) => setServiceType(e.target.value as 'BALCAO' | 'DELIVERY')}
                   className="h-8 px-2 rounded border border-gray-300 bg-white"
                 >
-                  <option value="ENTREGA">Entrega</option>
-                  <option value="RETIRADA">Retirada</option>
+                  <option value="DELIVERY">Delivery</option>
                   <option value="BALCAO">Balcão</option>
                 </select>
               </div>
@@ -1766,6 +1840,80 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
           </button>
         </div>
       </div>
+      
+      {/* Modal de Modo de Venda (TROCA/COMPLETA) */}
+      {showSaleModeModal && pendingProduct && (() => {
+        // Calcular preços para exibição
+        const precoTroca = (pendingProduct as any).preco_troca ?? pendingProduct.preco_padrao;
+        const precoCompleta = (pendingProduct as any).preco_completa ?? pendingProduct.preco_padrao;
+        
+        return (
+        <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="bg-orange-600 text-white px-4 py-3 flex items-center gap-2">
+              <span className="text-xl">🔄</span>
+              <span className="font-bold">Tipo de Venda</span>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-700 mb-2">
+                Você está vendendo: <strong>{pendingProduct.nome}</strong>
+              </p>
+              <p className="text-gray-600 text-sm mb-6">
+                Como será a venda deste produto?
+              </p>
+              
+              <div className="space-y-3">
+                <button
+                  onClick={() => handleSaleModeConfirm('EXCHANGE')}
+                  className="w-full p-4 rounded-lg border-2 border-green-500 bg-green-50 hover:bg-green-100 transition-colors text-left"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🔁</span>
+                      <div>
+                        <div className="font-bold text-green-800">TROCA</div>
+                        <div className="text-sm text-green-700">Cliente devolve casco vazio</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-black text-green-700">R$ {precoTroca.toFixed(2)}</div>
+                    </div>
+                  </div>
+                </button>
+                
+                <button
+                  onClick={() => handleSaleModeConfirm('FULL')}
+                  className="w-full p-4 rounded-lg border-2 border-blue-500 bg-blue-50 hover:bg-blue-100 transition-colors text-left"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">📦</span>
+                      <div>
+                        <div className="font-bold text-blue-800">COMPLETA</div>
+                        <div className="text-sm text-blue-700">Cliente leva o casco (cliente novo)</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-black text-blue-700">R$ {precoCompleta.toFixed(2)}</div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 px-4 py-3 flex justify-end">
+              <button
+                onClick={handleSaleModeCancel}
+                className="px-4 py-2 rounded border border-gray-300 text-gray-600 hover:bg-gray-100"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+      
       {showClientModal && <NewClientModal onClose={() => setShowClientModal(false)} onSave={handleSaveNewClient} />}
       {showReceiptPreview && (
         <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4">

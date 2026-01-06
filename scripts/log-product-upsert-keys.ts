@@ -31,7 +31,7 @@ function loadDotEnvLocal() {
 loadDotEnvLocal();
 
 // Importa após carregar env (para o supabaseClient ler process.env)
-const { applyProductUpsert } = await import('../src/domain/sync/supabaseAppliers');
+const { applyProductUpsert } = await import('@/domain/sync/supabaseAppliers');
 
 const debugId = globalThis.crypto?.randomUUID
   ? globalThis.crypto.randomUUID()

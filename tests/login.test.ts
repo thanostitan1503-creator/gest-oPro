@@ -9,9 +9,9 @@
  */
 
 import './setup'; // Configurar fake-indexeddb
-import { db, generateId } from '../src/domain/db';
-import { listEmployees, upsertEmployee, deleteEmployee } from '../src/domain/repositories/employees.repo';
-import type { Colaborador } from '../src/domain/types';
+import { db, generateId } from '@/domain/db';
+import { listEmployees, upsertEmployee, deleteEmployee } from '@/domain/repositories/employees.repo';
+import type { Colaborador } from '@/domain/types';
 
 // ==================== HELPER FUNCTIONS ====================
 

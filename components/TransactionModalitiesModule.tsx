@@ -8,15 +8,15 @@ import {
 import { 
   ModalidadeVenda, RotuloModalidade, RegraEstoqueModalidade, 
   Produto, DepositoFisicoId 
-} from '../src/domain/types';
+} from '@/domain/types';
 import { 
   getSalesModalities, saveSalesModalities, 
   getModalityLabels, saveModalityLabels, 
   getStockRules, saveStockRules,
   getProducts 
-} from '../src/domain/storage';
-import { listDeposits } from '../src/domain/repositories/deposits.repo';
-import { Deposit } from '../src/domain/types';
+} from '@/domain/storage';
+import { listDeposits } from '@/domain/repositories/deposits.repo';
+import { Deposit } from '@/domain/types';
 
 interface TransactionModalitiesModuleProps {
   onClose: () => void;

@@ -252,8 +252,9 @@ export type OutboxEntity =
   | 'financial_settings'
   | 'delivery_jobs'
   | 'delivery_zones'
-  | 'delivery_zones'
+  | 'delivery_sectors'
   | 'zone_pricing'
+  | 'product_pricing'
   | 'expenses'
   | 'work_shifts'
   | 'cash_flow_entries'
@@ -306,9 +307,9 @@ export class GestaoProDB extends Dexie {
   delivery_jobs!: Table<DeliveryJob, string>;
   driver_presence!: Table<DriverPresence, string>;
   delivery_zones!: Table<DeliveryZone, string>;
-  delivery_zones!: Table<DeliverySector, string>;
+  delivery_sectors!: Table<DeliverySector, string>;
   zone_pricing!: Table<ZonePricing, string>;
-  zone_pricing!: Table<ProductPricing, string>;
+  product_pricing!: Table<ProductPricing, string>;
   product_exchange_rules!: Table<ProductExchangeRule, string>;
   expenses!: Table<Expense, string>;
   work_shifts!: Table<WorkShift, string>;
@@ -882,7 +883,7 @@ export class GestaoProDB extends Dexie {
       delivery_jobs: 'id, status, depositoId, assignedDriverId, osId',
       driver_presence: 'driverId, status, lastSeenAt',
       delivery_zones: 'id, deposit_id, name',
-      delivery_zones: 'id, zone_id, name',
+      delivery_sectors: 'id, zone_id, name',
       expenses: 'id, status, due_date, category',
       work_shifts: 'id, deposit_id, user_id, status, opened_at',
       cash_flow_entries: 'id, shift_id, deposit_id, user_id, category, status, created_at, reference_id',
@@ -920,7 +921,7 @@ export class GestaoProDB extends Dexie {
       delivery_jobs: 'id, status, depositoId, assignedDriverId, osId',
       driver_presence: 'driverId, status, lastSeenAt',
       delivery_zones: 'id, deposit_id, name',
-      delivery_zones: 'id, zone_id, name',
+      delivery_sectors: 'id, zone_id, name',
       zone_pricing: 'id, [zone_id+deposit_id], zone_id, deposit_id',
       expenses: 'id, status, due_date, category',
       work_shifts: 'id, deposit_id, user_id, status, opened_at',
@@ -960,7 +961,7 @@ export class GestaoProDB extends Dexie {
         delivery_jobs: 'id, status, depositoId, assignedDriverId, osId',
         driver_presence: 'driverId, status, lastSeenAt',
         delivery_zones: 'id, deposit_id, name',
-        delivery_zones: 'id, zone_id, name',
+        delivery_sectors: 'id, zone_id, name',
         zone_pricing: 'id, [zone_id+deposit_id], zone_id, deposit_id',
         expenses: 'id, status, due_date, category',
         work_shifts: 'id, deposit_id, user_id, status, opened_at',
@@ -1066,7 +1067,7 @@ export class GestaoProDB extends Dexie {
         delivery_jobs: 'id, status, depositoId, assignedDriverId, osId',
         driver_presence: 'driverId, status, lastSeenAt',
         delivery_zones: 'id, deposit_id, name',
-        delivery_zones: 'id, zone_id, name',
+        delivery_sectors: 'id, zone_id, name',
         zone_pricing: 'id, [zone_id+deposit_id], zone_id, deposit_id',
         expenses: 'id, status, due_date, category',
         work_shifts: 'id, deposit_id, user_id, status, opened_at',
@@ -1177,7 +1178,7 @@ export class GestaoProDB extends Dexie {
         delivery_jobs: 'id, status, depositoId, assignedDriverId, osId',
         driver_presence: 'driverId, status, lastSeenAt',
         delivery_zones: 'id, deposit_id, name',
-        delivery_zones: 'id, zone_id, name',
+        delivery_sectors: 'id, zone_id, name',
         zone_pricing: 'id, [zone_id+deposit_id], zone_id, deposit_id',
         expenses: 'id, status, due_date, category',
         work_shifts: 'id, deposit_id, user_id, status, opened_at',
@@ -1288,8 +1289,8 @@ export class GestaoProDB extends Dexie {
                 receivable_titles: 'id, osId, status',
                 delivery_jobs: 'id, status, depositoId, assignedDriverId, osId',
                 driver_presence: 'driverId, status, lastSeenAt',
-                delivery_zones: 'id, deposit_id, name',
-                delivery_zones: 'id, zone_id, name',
+                    delivery_zones: 'id, deposit_id, name',
+                    delivery_sectors: 'id, zone_id, name',
                 zone_pricing: 'id, [zone_id+deposit_id], zone_id, deposit_id',
                 expenses: 'id, status, due_date, category',
                 work_shifts: 'id, deposit_id, user_id, status, opened_at',
@@ -1317,7 +1318,7 @@ export class GestaoProDB extends Dexie {
                 deposits: 'id, name, active',
                 products: 'id, codigo, nome, ativo, tipo, product_group, depositoId',
                 price_table: 'id, product_id, modalidade',
-                zone_pricing: 'id, [productId+depositoId], productId, depositoId',
+                product_pricing: 'id, [productId+depositoId], productId, depositoId',
                 employees: 'id, username, deposit_id, cargo, ativo',
                 clients: 'id, nome, ativo',
                 client_price_overrides: 'id, client_id, product_id, modalidade',
@@ -1343,7 +1344,7 @@ export class GestaoProDB extends Dexie {
                 delivery_jobs: 'id, status, depositoId, assignedDriverId, osId',
                 driver_presence: 'driverId, status, lastSeenAt',
                 delivery_zones: 'id, deposit_id, name',
-                delivery_zones: 'id, zone_id, name',
+                delivery_sectors: 'id, zone_id, name',
                 zone_pricing: 'id, [zone_id+deposit_id], zone_id, deposit_id',
                 expenses: 'id, status, due_date, category',
                 work_shifts: 'id, deposit_id, user_id, status, opened_at',
@@ -1361,7 +1362,7 @@ export class GestaoProDB extends Dexie {
                   if (px <= 0) continue;
                   prices.push({id: `${p.id}:${did}`, productId: p.id, depositoId: did, price: px, created_at: new Date().toISOString(), updated_at: new Date().toISOString()});
                 }
-                if (prices.length) await tx.table('zone_pricing').bulkAdd(prices);
+                if (prices.length) await tx.table('product_pricing').bulkAdd(prices);
                 console.log(`v17: ${prices.length} prices migrated`);
             });
 
@@ -1370,7 +1371,7 @@ export class GestaoProDB extends Dexie {
                   deposits: 'id, name, active',
                   products: 'id, codigo, nome, ativo, tipo, product_group, depositoId',
                   price_table: 'id, product_id, modalidade',
-                  zone_pricing: 'id, [productId+depositoId], productId, depositoId',
+                  product_pricing: 'id, [productId+depositoId], productId, depositoId',
                   product_exchange_rules: 'id, [productId+depositoId], productId, depositoId',
                   employees: 'id, username, deposit_id, cargo, ativo',
                   clients: 'id, nome, ativo',
@@ -1397,7 +1398,7 @@ export class GestaoProDB extends Dexie {
                   delivery_jobs: 'id, status, depositoId, assignedDriverId, osId',
                   driver_presence: 'driverId, status, lastSeenAt',
                   delivery_zones: 'id, deposit_id, name',
-                  delivery_zones: 'id, zone_id, name',
+                  delivery_sectors: 'id, zone_id, name',
                   zone_pricing: 'id, [zone_id+deposit_id], zone_id, deposit_id',
                   expenses: 'id, status, due_date, category',
                   work_shifts: 'id, deposit_id, user_id, status, opened_at',

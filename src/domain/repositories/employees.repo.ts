@@ -1,7 +1,7 @@
 import { db, generateId } from '../db';
 import { Colaborador } from '../types';
 import { enqueueOutboxEvent } from '../sync/outbox';
-import { normalizeDepositId } from '../../src/domain/utils/dataSanitizer';
+import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 export async function listEmployees(): Promise<Colaborador[]> {
   const employees = await db.employees.toArray();

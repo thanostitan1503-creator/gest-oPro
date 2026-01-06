@@ -13,11 +13,11 @@ import {
   FileText,
   Activity
 } from 'lucide-react';
-import { listServiceOrders } from '../src/domain/repositories/serviceOrders.repo';
-import { listDeposits } from '../src/domain/repositories/deposits.repo';
-import { listEmployees } from '../src/domain/repositories/employees.repo';
-import { OrdemServico, LogHistoricoOS } from '../src/domain/types';
-import { normalizeDepositId } from '../src/domain/utils/dataSanitizer';
+import { listServiceOrders } from '@/domain/repositories/serviceOrders.repo';
+import { listDeposits } from '@/domain/repositories/deposits.repo';
+import { listEmployees } from '@/domain/repositories/employees.repo';
+import { OrdemServico, LogHistoricoOS } from '@/domain/types';
+import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
@@ -179,7 +179,7 @@ export const SummaryModule: React.FC<SummaryModuleProps> = ({ onClose }) => {
     const concluded = orders.filter((o) => o.status === 'CONCLUIDA').length;
     const uniqueClients = new Set(orders.map((o) => o.clienteId || o.clienteNome || '')).size;
 
-    const delivered = orders.filter((o) => o.statusEntrega === 'ENTREGUE').length;
+    const delivered = orders.filter((o) => o.statusEntrega === 'CONCLUIDA').length;
     const deliveryRate = orders.length ? Math.round((delivered / orders.length) * 100) : 0;
 
     const byDeposit = orders.reduce<Record<string, {
@@ -199,8 +199,8 @@ export const SummaryModule: React.FC<SummaryModuleProps> = ({ onClose }) => {
       }
       acc[key].count += 1;
       acc[key].gross += o.total || 0;
-      acc[key].deliveries += o.statusEntrega === 'ENTREGUE' ? 1 : 0;
-      acc[key].pickups += o.tipoAtendimento === 'RETIRADA' ? 1 : 0;
+      acc[key].deliveries += o.tipoAtendimento === 'DELIVERY' ? 1 : 0;
+      acc[key].pickups += o.tipoAtendimento === 'BALCAO' ? 1 : 0;
       return acc;
     }, {});
 
@@ -448,7 +448,7 @@ export const SummaryModule: React.FC<SummaryModuleProps> = ({ onClose }) => {
                       <th className="px-4 py-3 rounded-l-lg">Depósito</th>
                       <th className="px-4 py-3 text-center">Qtd. O.S</th>
                       <th className="px-4 py-3 text-center">Entregas</th>
-                      <th className="px-4 py-3 text-center">Retiradas</th>
+                      <th className="px-4 py-3 text-center">Balcão</th>
                       <th className="px-4 py-3 text-right">Valor Bruto</th>
                       <th className="px-4 py-3 text-right">Descontos</th>
                       <th className="px-4 py-3 rounded-r-lg text-right">Valor Líquido</th>

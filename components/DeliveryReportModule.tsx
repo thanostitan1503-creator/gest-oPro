@@ -12,18 +12,18 @@ import {
   X, Truck, Map as MapIcon, Flame, Activity, MapPin, Plus, Trash2, Search
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { getOrders, getDriverLocations } from '../src/domain/storage';
-import { OrdemServico, DriverLocation } from '../src/domain/types';
-import { db } from '../src/domain/db';
+import { getOrders, getDriverLocations } from '@/domain/storage';
+import { OrdemServico, DriverLocation } from '@/domain/types';
+import { db } from '@/domain/db';
 import { 
   upsertDeliveryZone,
   deleteDeliveryZone,
   upsertDeliverySector,
   deleteDeliverySector,
   moveDeliverySector,
-} from '../src/domain/repositories/deliveryZones.repo';
-import { upsertZonePricing } from '../src/domain/repositories/zonePricing.repo';
-import { upsertDeposit } from '../src/domain/repositories/deposits.repo';
+} from '@/domain/repositories/deliveryZones.repo';
+import { upsertZonePricing } from '@/domain/repositories/zonePricing.repo';
+import { upsertDeposit } from '@/domain/repositories/deposits.repo';
 
 type LatLngTuple = [number, number];
 type LatLngPolygon = LatLngTuple[][];
@@ -714,8 +714,9 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
     Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   const revenueSummary = useMemo(() => {
+    // Novo fluxo (v2.0): usa apenas CONCLUIDA como status de sucesso
     const finalized = deliveries.filter(
-      (o) => o.status === 'CONCLUIDA' || o.statusEntrega === 'ENTREGUE'
+      (o) => o.status === 'CONCLUIDA' || o.statusEntrega === 'CONCLUIDA'
     );
     let productRevenue = 0;
     let deliveryFees = 0;

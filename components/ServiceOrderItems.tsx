@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Trash2 } from 'lucide-react';
-import { db } from '../src/domain/db';
+import { db } from '@/domain/db';
 
 export interface OrderItem {
   id: string;
@@ -10,6 +10,8 @@ export interface OrderItem {
   tipo: string;
   precoUnitario: number;
   quantidade: number;
+  /** Modo de venda escolhido: EXCHANGE (troca) ou FULL (completa) */
+  sale_movement_type?: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null;
 }
 
 interface ServiceOrderItemsProps {
@@ -201,9 +203,27 @@ export function ServiceOrderItems({
             ) : (
               items.map((item) => {
                 const isLocked = lockedProductIds?.includes(item.produtoId);
+                const saleModeLabel = item.sale_movement_type === 'EXCHANGE' 
+                  ? '🔁 TROCA' 
+                  : item.sale_movement_type === 'FULL' 
+                    ? '📦 COMPLETA' 
+                    : null;
                 return (
                   <tr key={item.id} className="border-t border-gray-200">
-                    <td className="px-2 py-2">{item.nome}</td>
+                    <td className="px-2 py-2">
+                      <div className="flex flex-col gap-1">
+                        <span>{item.nome}</span>
+                        {saleModeLabel && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded w-fit ${
+                            item.sale_movement_type === 'EXCHANGE' 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {saleModeLabel}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-2 py-2">{item.tipo}</td>
                     <td className="px-2 py-2">R$ {item.precoUnitario.toFixed(2)}</td>
                     <td className="px-2 py-2">

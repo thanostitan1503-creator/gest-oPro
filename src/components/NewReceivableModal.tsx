@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '../../src/domain/db';
-import { Cliente } from '../../src/domain/types';
-import { createReceivable } from '../../src/domain/repositories/receivables.repo';
+import { db } from '@/domain/db';
+import { Cliente } from '@/domain/types';
+import { createReceivable } from '@/domain/repositories/receivables.repo';
 
 interface NewReceivableModalProps {
   isOpen: boolean;

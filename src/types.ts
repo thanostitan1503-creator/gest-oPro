@@ -28,6 +28,11 @@ export type Produto = {
   preco_venda: number;
   preco_padrao: number;
   marcacao: number;
+  
+  /** Preço quando é TROCA (cliente devolve casco) */
+  preco_troca?: number | null;
+  /** Preço quando é COMPLETA (cliente leva casco) */
+  preco_completa?: number | null;
 
   track_stock?: boolean;
   is_delivery_fee?: boolean;

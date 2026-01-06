@@ -8,9 +8,9 @@ import { X, Truck, Plus, Trash2, Map as MapIcon, Palette } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { EditControl } from 'react-leaflet-draw';
 import { FeatureGroup, MapContainer, Pane, Polygon, TileLayer, Tooltip, useMap } from 'react-leaflet';
-import { db } from '../src/domain/db';
-import { supabase } from '../src/domain/supabaseClient';
-import { Deposito, DeliverySector, DeliveryZone } from '../src/domain/types';
+import { db } from '@/domain/db';
+import { supabase } from '@/domain/supabaseClient';
+import { Deposito, DeliverySector, DeliveryZone } from '@/domain/types';
 import {
   deleteDeliverySector,
   deleteDeliveryZone,
@@ -18,7 +18,7 @@ import {
   upsertDeliverySector,
   upsertZonePricing,
   upsertDeposit,
-} from '../src/domain/repositories/index';
+} from '@/domain/repositories/index';
 
 interface DeliverySettingsModalProps {
   onClose: () => void;

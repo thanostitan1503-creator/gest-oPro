@@ -11,8 +11,8 @@
 
 import React, { useState } from 'react';
 import { DollarSign, Package, ArrowLeft, Check, Loader2, AlertCircle } from 'lucide-react';
-import { db, generateId } from '../../src/domain/db';
-import { MovimentoEstoque } from '../../src/domain/types';
+import { db, generateId } from '@/domain/db';
+import { MovimentoEstoque } from '@/domain/types';
 import { CreatedProductInfo } from './index';
 
 interface Step2Props {

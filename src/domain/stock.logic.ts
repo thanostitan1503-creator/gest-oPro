@@ -98,6 +98,15 @@ export function validarSaldoEstoque(
 /**
  * Generates stock movements based on OS items.
  * Handles the logic of Shells (Cascos) for 'TROCA'.
+ * 
+ * ⚠️ IMPORTANTE: O modo de venda é determinado por:
+ * 1. PRIORIDADE 1: sale_movement_type do ITEM (escolhido no momento da venda)
+ * 2. PRIORIDADE 2: movement_type do PRODUTO (cadastro)
+ * 
+ * Modos:
+ * - EXCHANGE (TROCA): -1 cheio, +1 vazio (cliente devolve casco)
+ * - FULL (COMPLETA): -1 cheio apenas (cliente leva o casco)
+ * - SIMPLE: movimento simples, sem troca de vasilhame
  */
 export function calcularMovimentosEstoque(
   os: OrdemServico,
@@ -133,8 +142,23 @@ export function calcularMovimentosEstoque(
     }
 
     // 2. Movement of the Return Item (Exchange)
-    const movementType = normalizeMovementType(produto);
-    if (movementType === 'EXCHANGE') {
+    // ✅ PRIORIDADE: sale_movement_type do ITEM > movement_type do PRODUTO
+    const itemSaleMode = String(
+      (item as any)?.sale_movement_type ?? ''
+    ).toUpperCase();
+    
+    // Se o item tem sale_movement_type definido, usa ele
+    // Caso contrário, usa o movement_type do produto
+    let effectiveMovementType: string;
+    if (itemSaleMode === 'EXCHANGE' || itemSaleMode === 'FULL' || itemSaleMode === 'SIMPLE') {
+      effectiveMovementType = itemSaleMode;
+    } else {
+      effectiveMovementType = normalizeMovementType(produto);
+    }
+
+    // Só gera entrada de vazio se for EXCHANGE (TROCA)
+    // Se for FULL (COMPLETA), não entra vazio porque cliente leva o casco
+    if (effectiveMovementType === 'EXCHANGE') {
       const tipoCasco: TipoMovimentoEstoque = inverter ? 'SAIDA' : 'ENTRADA';
       const casco = resolveReturnProduct(produto, produtos);
 
@@ -154,6 +178,8 @@ export function calcularMovimentosEstoque(
         });
       }
     }
+    // Se effectiveMovementType === 'FULL': NÃO entra vazio (cliente leva o casco)
+    // Se effectiveMovementType === 'SIMPLE': movimento simples, sem vasilhame
   }
 
   return movimentos;

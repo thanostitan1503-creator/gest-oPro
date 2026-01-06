@@ -10,8 +10,8 @@ import {
 import { 
   Cliente, ClientePreco, ClienteDescontoPendente, 
   UserRole, DepositoFisicoId, ModalidadeItem 
-} from '../src/domain/types';
-import { db } from '../src/domain/db';
+} from '@/domain/types';
+import { db } from '@/domain/db';
 
 import {
   listClients,
@@ -24,14 +24,18 @@ import {
   upsertClientDiscount,
   deleteClientDiscount,
   listDeposits,
-} from '../src/domain/repositories/index';
+} from '@/domain/repositories/index';
 
 interface ClientsModuleProps {
   onClose: () => void;
   userRole: UserRole;
 }
 
-const MODALIDADES: ModalidadeItem[] = ['VENDA', 'TROCA', 'CASCO_COMPLETO', 'AGUA_CHEIO', 'AGUA_TROCA'];
+// Modalidades de venda baseadas no movement_type do produto
+// SIMPLE = Venda simples (só sai do estoque)
+// EXCHANGE = Troca (sai cheio, entra vazio)
+// FULL = Venda completa (sai cheio + casco, sem retorno)
+const MODALIDADES: ModalidadeItem[] = ['SIMPLE', 'EXCHANGE', 'FULL'];
 const EMPTY_CLIENT: Partial<Cliente> = { nome: '', endereco: '', telefone: '', cpf: '', referencia: '', dataNascimento: '', deliveryZoneId: null };
 
 export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole }) => {

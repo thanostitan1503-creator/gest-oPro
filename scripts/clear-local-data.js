@@ -12,7 +12,7 @@ async function resetCompleto() {
   console.log('✅ localStorage limpo');
   
   // Deleta o banco Dexie principal
-  const { db } = await import('./src/domain/db');
+  const { db } = await import('@/domain/db');
   await db.delete();
   console.log('✅ Dexie (GestaoProDexie) deletado');
   
@@ -33,7 +33,7 @@ async function resetCompleto() {
 async function limparApenasDepositos() {
   console.log('🧹 Limpando apenas depósitos...');
   
-  const { db } = await import('./src/domain/db');
+  const { db } = await import('@/domain/db');
   
   // Limpa tabelas relacionadas
   await db.deposits.clear();

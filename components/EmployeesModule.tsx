@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../src/domain/db';
+import { db } from '@/domain/db';
 import { 
   X, Users, UserPlus, Search, 
   MapPin, Truck, Shield, BadgeCheck,
@@ -10,8 +10,8 @@ import {
   Save, Phone, Lock, Eye, EyeOff,
   CheckSquare, Square, LayoutGrid, Ban, CheckCircle2
 } from 'lucide-react';
-import { Colaborador, Deposito } from '../src/domain/types';
-import { listEmployees, upsertEmployee, deleteEmployee } from '../src/domain/repositories/employees.repo';
+import { Colaborador, Deposito } from '@/domain/types';
+import { listEmployees, upsertEmployee, deleteEmployee } from '@/domain/repositories/employees.repo';
 import { DASHBOARD_ITEMS } from '../constants';
 
 interface EmployeesModuleProps {

@@ -4,10 +4,10 @@ import {
   MapPin, Phone, User, CheckCircle2, Navigation, AlertTriangle, 
   ChevronRight, Package, DollarSign, ArrowLeft
 } from 'lucide-react';
-import { Colaborador, DeliveryJob } from '../src/domain/types';
-import { listDeliveryJobsByDriver } from '../src/domain/repositories/index';
-import { updateDriverHeartbeat } from '../src/domain/driverPresence.logic';
-import { startRoute, completeJob, cancelJob } from '../src/domain/delivery.logic';
+import { Colaborador, DeliveryJob } from '@/domain/types';
+import { listDeliveryJobsByDriver } from '@/domain/repositories/index';
+import { updateDriverHeartbeat } from '@/domain/driverPresence.logic';
+import { completeJob, returnJob } from '@/domain/delivery.logic';
 
 interface DriverCurrentDeliveryModuleProps {
   currentUser: Colaborador;
@@ -23,7 +23,8 @@ export const DriverCurrentDeliveryModule: React.FC<DriverCurrentDeliveryModulePr
 
       const fetchJob = async () => {
          const myJobs = await listDeliveryJobsByDriver(currentUser.id);
-         const activeJob = myJobs.find(j => j.status === 'ACEITA' || j.status === 'EM_ROTA');
+         // Novo fluxo: motorista só vê entregas EM_ROTA atribuídas a ele
+         const activeJob = myJobs.find(j => j.status === 'EM_ROTA');
       
          if (!isMounted) return;
 
@@ -43,14 +44,6 @@ export const DriverCurrentDeliveryModule: React.FC<DriverCurrentDeliveryModulePr
 
   if (!job) return <div className="p-10 text-center text-white">Carregando dados da entrega...</div>;
 
-   const handleStartRoute = () => {
-      if (confirm("Iniciar rota para o cliente?")) {
-         startRoute(job.id).then((updated) => {
-            if (updated) setJob(updated);
-         });
-      }
-   };
-
    const handleComplete = () => {
       if (confirm("Confirmar entrega realizada e recebimento do valor?")) {
          completeJob(job.id).then(() => onJobFinished());
@@ -60,7 +53,7 @@ export const DriverCurrentDeliveryModule: React.FC<DriverCurrentDeliveryModulePr
    const handleFail = () => {
       const reason = prompt("Motivo da devolução/falha:");
       if (reason) {
-         cancelJob(job.id, `Falha entrega: ${reason}`).then(() => onJobFinished());
+         returnJob(job.id, reason).then(() => onJobFinished());
       }
    };
 
@@ -77,10 +70,10 @@ export const DriverCurrentDeliveryModule: React.FC<DriverCurrentDeliveryModulePr
          <div className="absolute inset-0 opacity-30 bg-[url('https://upload.wikimedia.org/wikipedia/commons/e/ec/OpenStreetMap_Logo.png')] bg-cover bg-center grayscale mix-blend-overlay"></div>
          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-950"></div>
          
-         {/* Status Pill */}
+         {/* Status Pill - Simplificado: só mostra EM_ROTA */}
          <div className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-slate-900/80 backdrop-blur border border-slate-700 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
-            {job.status === 'EM_ROTA' ? <Navigation className="w-4 h-4 text-blue-500 animate-pulse" /> : <Package className="w-4 h-4 text-amber-500" />}
-            {job.status === 'EM_ROTA' ? 'Em Deslocamento' : 'Preparando Saída'}
+            <Navigation className="w-4 h-4 text-blue-500 animate-pulse" />
+            Em Deslocamento
          </div>
       </div>
 
@@ -131,31 +124,22 @@ export const DriverCurrentDeliveryModule: React.FC<DriverCurrentDeliveryModulePr
 
          </div>
 
-         {/* Actions */}
+         {/* Actions - Simplificado: motorista só completa ou reporta problema */}
          <div className="mt-4 space-y-3">
-            {job.status === 'ACEITA' ? (
+            <div className="grid grid-cols-4 gap-3">
                <button 
-                 onClick={handleStartRoute}
-                 className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-base shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
+                 onClick={openMaps}
+                 className="col-span-1 bg-slate-800 hover:bg-slate-700 text-white rounded-xl flex items-center justify-center py-4"
                >
-                  <Navigation className="w-5 h-5" /> INICIAR ROTA
+                  <Navigation className="w-6 h-6" />
                </button>
-            ) : (
-               <div className="grid grid-cols-4 gap-3">
-                  <button 
-                    onClick={openMaps}
-                    className="col-span-1 bg-slate-800 hover:bg-slate-700 text-white rounded-xl flex items-center justify-center"
-                  >
-                     <Navigation className="w-6 h-6" />
-                  </button>
-                  <button 
-                    onClick={handleComplete}
-                    className="col-span-3 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-base shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
-                  >
-                     <CheckCircle2 className="w-5 h-5" /> FINALIZAR
-                  </button>
-               </div>
-            )}
+               <button 
+                 onClick={handleComplete}
+                 className="col-span-3 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-base shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+               >
+                  <CheckCircle2 className="w-5 h-5" /> FINALIZAR
+               </button>
+            </div>
             
             <button 
                onClick={handleFail}

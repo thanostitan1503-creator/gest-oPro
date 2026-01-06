@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { X } from 'lucide-react';
-import { db, generateId } from '../src/domain/db';
-import { getEmployees } from '../src/domain/storage';
-import { enqueueOutboxEvent } from '../src/domain/sync/outbox';
+import { db, generateId } from '@/domain/db';
+import { getEmployees } from '@/domain/storage';
+import { enqueueOutboxEvent } from '@/domain/sync/outbox';
 // IMPORTANTE: Importando o componente que acabamos de criar
 import { ServiceOrderItems } from './ServiceOrderItems'; 
 
@@ -293,9 +293,8 @@ const NewServiceOrderModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
                   <div className="flex flex-col gap-1">
                     <label className="font-semibold text-gray-700">Tipo:</label>
                     <select value={serviceType} onChange={e => setServiceType(e.target.value)} className="w-full h-9 px-2 rounded border border-gray-300">
-                      <option>Entrega</option>
-                      <option>Retirada</option>
-                      <option>Balcão</option>
+                      <option value="DELIVERY">Delivery</option>
+                      <option value="BALCAO">Balcão</option>
                     </select>
                   </div>
                   

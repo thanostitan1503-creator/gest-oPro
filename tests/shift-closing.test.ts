@@ -10,10 +10,10 @@
  */
 
 import './setup'; // Configurar fake-indexeddb
-import { db, generateId } from '../src/domain/db';
-import { openShift, closeShift, getOpenShiftForUser } from '../src/domain/repositories/shift.repo';
-import { registerCashFlow } from '../src/domain/repositories/cashflow.repo';
-import type { WorkShift, CashFlowEntry } from '../src/domain/types';
+import { db, generateId } from '@/domain/db';
+import { openShift, closeShift, getOpenShiftForUser } from '@/domain/repositories/shift.repo';
+import { registerCashFlow } from '@/domain/repositories/cashflow.repo';
+import type { WorkShift, CashFlowEntry } from '@/domain/types';
 
 // ==================== HELPER FUNCTIONS ====================
 

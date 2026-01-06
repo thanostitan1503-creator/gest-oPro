@@ -7,7 +7,7 @@
  * Execute este script para limpar dados corrompidos no Supabase
  */
 
-import { supabase } from '../src/domain/supabaseClient';
+import { supabase } from '@/domain/supabaseClient';
 
 async function fixCorruptDeposits() {
   console.log('🔍 Buscando depósitos com nomes corrompidos...');

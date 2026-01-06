@@ -14,7 +14,7 @@ import './setup'; // Configurar fake-indexeddb ANTES de importar Dexie
 import { testLoginSystem, clearTestData as clearLogin } from './login.test';
 import { testExchangeSystem, clearTestData as clearExchange } from './exchange.test';
 import { testShiftClosingSystem, clearTestData as clearShift } from './shift-closing.test';
-import { db } from '../src/domain/db';
+import { db } from '@/domain/db';
 
 const colors = {
   reset: '\x1b[0m',

@@ -5,10 +5,9 @@ import {
   Power, BellRing, DollarSign, Package,
   CheckCircle2, XCircle
 } from 'lucide-react';
-import { Colaborador, DeliveryJob, DriverStatus } from '../src/domain/types';
-import { listDeliveryJobs } from '../src/domain/repositories/index';
-import { updateDriverHeartbeat } from '../src/domain/driverPresence.logic';
-import { acceptJob, refuseJob } from '../src/domain/delivery.logic';
+import { Colaborador, DeliveryJob, DriverStatus } from '@/domain/types';
+import { listDeliveryJobs } from '@/domain/repositories/index';
+import { updateDriverHeartbeat } from '@/domain/driverPresence.logic';
 
 // Som de Bip Digital (Curto e Alto)
 const ALERT_SOUND = "data:audio/mp3;base64,//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//uQxAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq";
@@ -18,8 +17,16 @@ interface DriverWaitingModuleProps {
   onJobStart: () => void;
 }
 
+/**
+ * Módulo de Espera do Motorista (v2.0)
+ * 
+ * No novo fluxo simplificado:
+ * - Operador atribui e inicia a rota de uma vez (startRoute)
+ * - Motorista NÃO precisa aceitar/recusar
+ * - Motorista fica "online" aguardando ser atribuído a uma entrega EM_ROTA
+ * - Quando uma entrega EM_ROTA é atribuída a ele, automaticamente vai para a tela de entrega
+ */
 export const DriverWaitingModule: React.FC<DriverWaitingModuleProps> = ({ currentUser, onJobStart }) => {
-  const [incomingJob, setIncomingJob] = useState<DeliveryJob | null>(null);
   const [isOnline, setIsOnline] = useState(false); // Começa offline para forçar interação
   const [lastPing, setLastPing] = useState(Date.now());
   
@@ -28,7 +35,7 @@ export const DriverWaitingModule: React.FC<DriverWaitingModuleProps> = ({ curren
   // Inicializa o elemento de áudio
   useEffect(() => {
     audioRef.current = new Audio(ALERT_SOUND);
-    audioRef.current.loop = true;
+    audioRef.current.loop = false; // Só toca uma vez no novo fluxo
     audioRef.current.volume = 1.0;
   }, []);
 
@@ -38,31 +45,23 @@ export const DriverWaitingModule: React.FC<DriverWaitingModuleProps> = ({ curren
 
     const checkJobs = async () => {
       // 1. Enviar batimento cardíaco (estou vivo e disponível)
-      const status: DriverStatus = incomingJob ? 'OCUPADO' : 'DISPONIVEL';
-      await updateDriverHeartbeat(currentUser, undefined, undefined, status);
+      await updateDriverHeartbeat(currentUser, undefined, undefined, 'DISPONIVEL');
       setLastPing(Date.now());
 
-      // 2. Verificar se tem job atribuído especificamente para mim
+      // 2. Verificar se tem job EM_ROTA atribuído para mim (novo fluxo)
       const jobs = await listDeliveryJobs();
-      const myJob = jobs.find(j => j.assignedDriverId === currentUser.id && j.status === 'ATRIBUIDA');
+      const myJob = jobs.find(j => j.assignedDriverId === currentUser.id && j.status === 'EM_ROTA');
 
       if (myJob) {
-        if (!incomingJob || incomingJob.id !== myJob.id) {
-           setIncomingJob(myJob);
-           // Tocar som se não estiver tocando
-           if (audioRef.current) {
-             audioRef.current.play().catch(e => console.log("Áudio bloqueado pelo navegador", e));
-           }
-           // Vibrar celular se suportado
-           if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
-        }
-      } else {
-        setIncomingJob(null);
-        // Parar som se não tiver job
+        // Tocar som de notificação
         if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current.currentTime = 0;
+          audioRef.current.play().catch(e => console.log("Áudio bloqueado pelo navegador", e));
         }
+        // Vibrar celular se suportado
+        if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+        
+        // Ir direto para a tela de entrega ativa
+        onJobStart();
       }
     };
 
@@ -76,35 +75,7 @@ export const DriverWaitingModule: React.FC<DriverWaitingModuleProps> = ({ curren
         audioRef.current.currentTime = 0;
       }
     };
-  }, [isOnline, currentUser, incomingJob]);
-
-  // Handlers
-  const handleAccept = () => {
-    if (!incomingJob) return;
-    
-    if (audioRef.current) audioRef.current.pause();
-
-    acceptJob(incomingJob.id, currentUser).then((updated) => {
-      if (updated) {
-      onJobStart(); 
-      } else {
-        alert("Erro ao aceitar. A entrega pode ter sido cancelada.");
-        setIncomingJob(null);
-      }
-    });
-  };
-
-  const handleRefuse = () => {
-    if (!incomingJob) return;
-    
-    if (confirm("Recusar esta corrida? Ela voltará para a fila.")) {
-      refuseJob(incomingJob.id, currentUser.id, "Recusa manual no app").then(() => setIncomingJob(null));
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-      }
-    }
-  };
+  }, [isOnline, currentUser, onJobStart]);
 
   const toggleOnline = () => {
     if (!isOnline) {
@@ -123,81 +94,9 @@ export const DriverWaitingModule: React.FC<DriverWaitingModuleProps> = ({ curren
     }
   };
 
-  // --- RENDER: TELA DE CHAMADO (INCOMING JOB) ---
-  if (incomingJob) {
-    return (
-      <div className="fixed inset-0 z-50 bg-slate-900 text-white flex flex-col animate-in slide-in-from-bottom duration-300">
-        
-        {/* Pisca Alerta Vermelho */}
-        <div className="absolute inset-0 bg-red-600/20 animate-pulse pointer-events-none z-0"></div>
-
-        <div className="relative z-10 flex-1 flex flex-col p-6">
-          
-          <div className="bg-red-600 rounded-2xl p-4 shadow-lg shadow-red-900/50 mb-6 text-center animate-bounce">
-            <h2 className="text-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3">
-              <BellRing className="w-8 h-8" /> Nova Entrega!
-            </h2>
-          </div>
-
-          <div className="flex-1 bg-slate-800 rounded-3xl border border-slate-700 p-6 flex flex-col gap-6 shadow-2xl overflow-y-auto">
-            
-            {/* Endereço */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-400 uppercase">Destino</label>
-              <div className="flex gap-3">
-                <MapPin className="w-8 h-8 text-red-500 shrink-0 mt-1" />
-                <div>
-                  <p className="text-xl font-bold leading-tight text-white">{incomingJob.address.full}</p>
-                  <p className="text-sm text-slate-400 mt-1">{incomingJob.customerName}</p>
-                </div>
-              </div>
-            </div>
-
-            <hr className="border-slate-700" />
-
-            {/* Resumo Pedido */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-900/50 p-4 rounded-xl">
-                <Package className="w-5 h-5 text-indigo-400 mb-2" />
-                <p className="text-xs text-slate-400 uppercase font-bold">Produtos</p>
-                <p className="font-bold text-sm text-indigo-100">{incomingJob.itemsSummary}</p>
-              </div>
-              <div className="bg-slate-900/50 p-4 rounded-xl">
-                <DollarSign className="w-5 h-5 text-emerald-400 mb-2" />
-                <p className="text-xs text-slate-400 uppercase font-bold">A Receber</p>
-                <p className="font-black text-xl text-emerald-400">R$ {incomingJob.totalValue.toFixed(2)}</p>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/50 p-4 rounded-xl">
-               <p className="text-xs text-slate-400 uppercase font-bold mb-1">Forma de Pagamento</p>
-               <p className="font-bold text-white text-lg">{incomingJob.paymentMethod}</p>
-            </div>
-
-          </div>
-
-          {/* Botões de Ação */}
-          <div className="mt-6 flex flex-col gap-3">
-            <button 
-              onClick={handleAccept}
-              className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all rounded-2xl font-black text-xl uppercase shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-3"
-            >
-              <CheckCircle2 className="w-8 h-8" /> ACEITAR CORRIDA
-            </button>
-            <button 
-              onClick={handleRefuse}
-              className="w-full py-4 bg-slate-700 hover:bg-slate-600 active:scale-95 transition-all rounded-2xl font-bold text-slate-300 uppercase flex items-center justify-center gap-2"
-            >
-              <XCircle className="w-5 h-5" /> Recusar
-            </button>
-          </div>
-
-        </div>
-      </div>
-    );
-  }
-
   // --- RENDER: TELA DE ESPERA (RADAR) ---
+  // No novo fluxo (v2.0), não há tela de aceitar/recusar.
+  // O operador atribui e inicia a rota; o motorista apenas aguarda ser chamado.
   return (
     <div className="h-full bg-slate-950 flex flex-col text-slate-200">
       
@@ -218,7 +117,7 @@ export const DriverWaitingModule: React.FC<DriverWaitingModuleProps> = ({ curren
           {isOnline ? 'Aguardando Chamados...' : 'Você está Offline'}
         </h2>
         <p className="text-xs text-slate-500 font-medium">
-          {isOnline ? 'Fique atento ao alerta sonoro' : 'Ative para receber entregas'}
+          {isOnline ? 'O operador enviará entregas para você' : 'Ative para receber entregas'}
         </p>
       </div>
 

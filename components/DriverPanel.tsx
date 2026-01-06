@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { Colaborador, DeliveryJob } from '../src/domain/types';
-import { listDeliveryJobsByDriver } from '../src/domain/repositories/index';
+import { Colaborador, DeliveryJob } from '@/domain/types';
+import { listDeliveryJobsByDriver } from '@/domain/repositories/index';
 import { DriverWaitingModule } from './DriverWaitingModule';
 import { DriverCurrentDeliveryModule } from './DriverCurrentDeliveryModule';
 import { LogOut } from 'lucide-react';
@@ -18,7 +18,8 @@ export const DriverPanel: React.FC<DriverPanelProps> = ({ currentUser, onLogout 
    useEffect(() => {
       const checkActive = async () => {
          const jobs = await listDeliveryJobsByDriver(currentUser.id);
-         const active = jobs.find(j => j.status === 'ACEITA' || j.status === 'EM_ROTA');
+         // Novo fluxo (v2.0): só verifica entregas EM_ROTA
+         const active = jobs.find(j => j.status === 'EM_ROTA');
          if (active) {
             setView('ACTIVE');
          }

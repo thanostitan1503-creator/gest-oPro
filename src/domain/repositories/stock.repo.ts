@@ -1,13 +1,16 @@
 import { db, generateId, StockBalanceRow, StockTransfer, StockTransferItem } from '../db';
 import { MovimentoEstoque } from '../types';
 import { enqueueOutboxEvent } from '../sync/outbox';
-import { normalizeDepositId } from '../../src/domain/utils/dataSanitizer';
+import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 function movementDelta(mov: MovimentoEstoque): number {
   switch (mov.tipo) {
     case 'ENTRADA':
       return mov.quantidade;
     case 'SUPRIMENTO_ENTRADA':
+      return mov.quantidade;
+    case 'CARGA_INICIAL':
+      // Carga inicial = entrada de estoque (quantidade total informada)
       return mov.quantidade;
     case 'SAIDA':
       return -mov.quantidade;

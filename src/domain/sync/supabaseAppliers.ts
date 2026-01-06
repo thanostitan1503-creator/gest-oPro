@@ -19,7 +19,7 @@ import {
   ZonePricing,
 } from '../types';
 import { AccountsReceivable, ReceivablePayment } from '../db';
-import { toSupabaseFormat } from '../../src/domain/utils/dataSanitizer';
+import { toSupabaseFormat } from '@/domain/utils/dataSanitizer';
 
 type AnyRow = Record<string, any>;
 
@@ -79,6 +79,40 @@ function looksLikeNotNullViolation(errOrMessage?: unknown): boolean {
   return message.includes('null value in column') && message.includes('violates not-null constraint');
 }
 
+/**
+ * Erros de FK (23503) acontecem quando uma entidade referencia outra
+ * que ainda não existe no Supabase.
+ */
+function looksLikeForeignKeyViolation(errOrMessage?: unknown): boolean {
+  if (!errOrMessage) return false;
+
+  const err: any =
+    typeof errOrMessage === 'string' ? { message: errOrMessage } : (errOrMessage as any);
+
+  const code = String(err?.code ?? '').toUpperCase();
+  if (code === '23503') return true;
+
+  const message = String(err?.message ?? '').toLowerCase();
+  const details = String(err?.details ?? '').toLowerCase();
+  const hint = String(err?.hint ?? '').toLowerCase();
+  const hay = `${message} ${details} ${hint}`;
+
+  return hay.includes('violates foreign key constraint') || hay.includes('is not present in table');
+}
+
+function looksLikeProductsReturnProductFK(errOrMessage?: unknown): boolean {
+  if (!looksLikeForeignKeyViolation(errOrMessage)) return false;
+
+  const err: any =
+    typeof errOrMessage === 'string' ? { message: errOrMessage } : (errOrMessage as any);
+
+  const message = String(err?.message ?? '').toLowerCase();
+  const details = String(err?.details ?? '').toLowerCase();
+  const hay = `${message} ${details}`;
+
+  return hay.includes('return_product_id') || hay.includes('products_return_product_id_fkey');
+}
+
 async function tryUpsert(table: string, variants: AnyRow[], onConflict = 'id') {
   let lastError: any = null;
 
@@ -105,6 +139,15 @@ async function tryUpsert(table: string, variants: AnyRow[], onConflict = 'id') {
     if (looksLikeColumnError(res.error) || looksLikeNotNullViolation(res.error)) {
       if (debugEnabled) {
         console.log('[UPSERT_FAIL_RETRY]', table, { code: (res.error as any)?.code, message: (res.error as any)?.message });
+      }
+      continue;
+    }
+
+    // Se for FK do return_product_id em products, tenta a próxima variante
+    // (ex.: variante com return_product_id removido/nulo)
+    if (table === 'products' && looksLikeProductsReturnProductFK(res.error)) {
+      if (debugEnabled) {
+        console.log('[UPSERT_FK_RETRY]', table, { code: (res.error as any)?.code, message: (res.error as any)?.message });
       }
       continue;
     }
@@ -197,7 +240,7 @@ export async function applyProductUpsert(p: Produto) {
     unidade: p.unidade ?? null,
     product_group: p.product_group ?? null,
     imagem_url: p.imagem_url ?? null,
-    depositoId: p.depositoId ?? p.deposit_id ?? null, // ✅ Auto-convertido
+    depositoId: (p as any).depositoId ?? (p as any).deposit_id ?? (p as any).deposito_id ?? null, // ✅ Auto-convertido
     preco_custo: p.preco_custo ?? 0,
     preco_venda: p.preco_venda ?? 0,
     preco_padrao: p.preco_padrao ?? 0,
@@ -213,6 +256,11 @@ export async function applyProductUpsert(p: Produto) {
     updated_at: p.updated_at ?? null,
   };
 
+  // 🔄 Variante: remove somente o vínculo (evita FK quando o vazio ainda não sincronizou)
+  const payloadNoReturn = returnProductId
+    ? ({ ...frontendFormat, return_product_id: null } as any)
+    : null;
+
   // 🔄 Versão compatível sem campos novos
   const payloadCompat = { ...frontendFormat } as any;
   delete payloadCompat.track_stock;
@@ -226,16 +274,15 @@ export async function applyProductUpsert(p: Produto) {
     (p as any).quantidade_atual ??
     null;
 
+  const bases: AnyRow[] = payloadNoReturn ? [frontendFormat, payloadNoReturn, payloadCompat] : [frontendFormat, payloadCompat];
+
   const variants = currentStock !== null
-    ? [
-        { ...frontendFormat, current_stock: currentStock },
-        { ...frontendFormat, quantidade_atual: currentStock },
-        frontendFormat,
-        { ...payloadCompat, current_stock: currentStock },
-        { ...payloadCompat, quantidade_atual: currentStock },
-        payloadCompat,
-      ]
-    : [frontendFormat, payloadCompat];
+    ? bases.flatMap((base) => [
+        { ...base, current_stock: currentStock },
+        { ...base, quantidade_atual: currentStock },
+        base,
+      ])
+    : bases;
 
   return tryUpsert('products', variants);
 }
@@ -247,12 +294,18 @@ export async function applyProductDelete(id: string) {
 // ----------------------- DEPOSITS (CORRIGIDO) -----------------------
 
 export async function applyDepositUpsert(d: Deposit) {
+  // 🔧 Aceita tanto português (nome, endereco, ativo, cor) quanto inglês (name, address, active, color)
+  const name = (d as any).nome || (d as any).name || null;
+  const address = (d as any).endereco || (d as any).address || null;
+  const active = (d as any).ativo ?? (d as any).active ?? true;
+  const color = (d as any).cor || (d as any).color || null;
+
   const payloadBase = {
     id: d.id,
-    name: d.name,
-    address: d.address ?? null,
-    active: !!d.active,
-    color: d.color ?? null,
+    name: name,
+    address: address,
+    active: !!active,
+    color: color,
     require_stock_audit: (d as any).require_stock_audit ?? (d as any).requireStockAudit ?? false,
 
     // Convertendo datas para string ISO (segurança contra erro 22008)
@@ -590,19 +643,41 @@ export async function applyStockMovementUpsert(m: any) {
     try { return new Date(val).toISOString(); } catch { return new Date().toISOString(); }
   };
 
+  // Mapeia tipo PT para tipo EN (IN/OUT)
+  const mapTipoToType = (tipo: string): string => {
+    switch (tipo) {
+      case 'ENTRADA':
+      case 'SUPRIMENTO_ENTRADA':
+      case 'CARGA_INICIAL':
+      case 'AJUSTE_CONTAGEM': // Ajuste pode ser + ou -, mas registramos como IN
+        return 'IN';
+      case 'SAIDA':
+      case 'SANGRIA_SAIDA':
+        return 'OUT';
+      default:
+        return tipo === 'OUT' ? 'OUT' : 'IN';
+    }
+  };
+
+  const tipoOriginal = m.tipo || m.type || 'IN';
+  const typeEN = mapTipoToType(tipoOriginal);
+
   // ✅ Usa formato frontend - depositoId será auto-convertido
   const payload = {
     id: m.id,
     produtoId: m.produtoId || m.product_id || m.produto_id,
     depositoId: m.depositoId || m.deposit_id || m.deposito_id, // ✅ Auto-convertido
     
-    // CORREÇÃO: Aceita 'type' (novo) OU 'tipo' (velho)
-    type: m.type || m.tipo || 'IN', 
+    // Tipo mapeado para EN (IN/OUT)
+    type: typeEN,
+    
+    // Origem original (para rastreabilidade)
+    origin: tipoOriginal,
     
     quantity: Number(m.quantity || m.quantidade || 0),
     reason: m.reason || m.motivo || 'Ajuste Manual',
     
-    created_at: toISO(m.data_hora || m.movement_date || m.created_at),
+    created_at: toISO(m.dataHora || m.data_hora || m.movement_date || m.created_at),
   };
 
   const cleanPayload = toSupabaseFormat(payload, 'stock_movements');
@@ -778,7 +853,7 @@ export async function applyExpenseUpsert(e: Expense) {
     status: e.status,
     category: e.category,
     is_fixed: !!e.is_fixed,
-    deposit_id: e.deposit_id || null,
+    deposit_id: (e as any).deposit_id ?? (e as any).depositId ?? (e as any).depositoId ?? null,
     alert_days_before: e.alert_days_before || 0,
     created_at: toISO(e.created_at),
     updated_at: new Date().toISOString(),
@@ -910,7 +985,7 @@ export async function applyDeliveryZoneUpsert(row: DeliveryZone) {
   const name = row.name ?? (row as any).nome ?? '';
   const feeRaw = row.fee ?? (row as any).price ?? (row as any).valor ?? 0;
   const depositId =
-    row.deposit_id ?? (row as any).depositId ?? (row as any).depositoId ?? null;
+    (row as any).deposit_id ?? (row as any).depositId ?? (row as any).depositoId ?? null;
   const feeValue = Number(feeRaw) || 0;
   const colorValue = row.color ?? (row as any).cor ?? null;
   const mapPolygonValue =
@@ -1035,7 +1110,7 @@ export async function applyDeliverySectorUpsert(row: DeliverySector) {
 }
 
 export async function applyDeliverySectorDelete(id: string) {
-  return tryDelete('delivery_zones', id);
+  return tryDelete('delivery_sectors', id);
 }
 
 // ----------------------- ZONE PRICING -----------------------
@@ -1053,7 +1128,7 @@ export async function applyZonePricingUpsert(row: ZonePricing) {
   const frontendFormat = {
     id,
     zone_id: zoneId,
-    depositoId, // ✅ Auto-convertido para deposit_id por toSupabaseFormat
+    depositoId: depositId, // ✅ Auto-convertido para deposit_id por toSupabaseFormat
     price: priceValue,
     created_at: createdAt,
     updated_at: updatedAt,
@@ -1063,10 +1138,12 @@ export async function applyZonePricingUpsert(row: ZonePricing) {
   const variantWithoutId = { ...frontendFormat };
   delete variantWithoutId.id;
 
+  // Tenta por ID quando existir, e fallback para conflito composto
+  const variants = [frontendFormat, variantWithoutId];
   try {
-    return await tryUpsert('zone_pricing', [frontendFormat, variantWithoutId], 'id');
+    return await tryUpsert('zone_pricing', variants, 'id');
   } catch (err) {
-    return tryUpsert('zone_pricing', variants, 'zone_id, deposit_id'); // ✅ FIXADO: Espaço após vírgula
+    return tryUpsert('zone_pricing', variants, 'zone_id,deposit_id');
   }
 }
 
@@ -1088,7 +1165,7 @@ export async function applyProductPricingUpsert(row: any) {
   const frontendFormat = {
     id,
     productId,      // ✅ Auto-convertido para product_id
-    depositoId,     // ✅ Auto-convertido para deposit_id
+    depositoId: depositId,     // ✅ Auto-convertido para deposit_id
     price: priceValue,
     created_at: createdAt,
     updated_at: updatedAt,
@@ -1099,7 +1176,7 @@ export async function applyProductPricingUpsert(row: any) {
   delete variantWithoutId.id;
 
   try {
-    return await tryUpsert('zone_pricing', [frontendFormat, variantWithoutId], 'id');
+    return await tryUpsert('product_pricing', [frontendFormat, variantWithoutId], 'id');
   } catch (err) {
     // Fallback: unique constraint por product_id + deposit_id
     const supabaseFormat = {
@@ -1109,12 +1186,12 @@ export async function applyProductPricingUpsert(row: any) {
       created_at: createdAt,
       updated_at: updatedAt,
     };
-    return tryUpsert('zone_pricing', [supabaseFormat], 'product_id, deposit_id');
+    return tryUpsert('product_pricing', [supabaseFormat], 'product_id,deposit_id');
   }
 }
 
 export async function applyProductPricingDelete(id: string) {
-  return tryDelete('zone_pricing', id);
+  return tryDelete('product_pricing', id);
 }
 
 // ----------------------- PRODUCT EXCHANGE RULES -----------------------

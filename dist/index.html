@@ -1,0 +1,143 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GestãoPro Dashboard</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              // Cores Semânticas
+              app: 'var(--app-bg)',
+              surface: 'var(--surface-bg)',
+              txt: {
+                main: 'var(--text-main)',
+                muted: 'var(--text-muted)',
+                inverted: 'var(--text-inverted)',
+              },
+              bdr: 'var(--border-color)',
+              primary: {
+                DEFAULT: 'var(--primary)',
+                foreground: '#ffffff',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Leaflet Heatmap Plugin -->
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
+    <style>
+      :root {
+        /* Default Light Theme Variables */
+        --app-bg: #f8fafc;
+        --surface-bg: #ffffff;
+        --text-main: #0f172a;
+        --text-muted: #64748b;
+        --text-inverted: #ffffff;
+        --border-color: #e2e8f0;
+        --primary: #4f46e5;
+        --app-pattern: none;
+        --bg-image: none;
+        --bg-opacity: 0.35;
+      }
+      
+      /* Scrollbar Personalizada para combinar com temas */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--app-bg);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--primary);
+      }
+
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: var(--app-bg);
+        color: var(--text-main);
+        transition: background-color 0.3s ease, color 0.3s ease;
+        position: relative;
+        z-index: 0;
+      }
+
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-color: transparent;
+        background-image: var(--app-pattern), var(--bg-image);
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        opacity: var(--bg-opacity);
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      #root {
+        position: relative;
+        z-index: 1;
+      }
+      
+      /* Utilitário para garantir legibilidade em inputs */
+      input, select, textarea {
+        background-color: var(--surface-bg);
+        color: var(--text-main);
+        border-color: var(--border-color);
+      }
+      input::placeholder {
+        color: var(--text-muted);
+        opacity: 0.7;
+      }
+    </style>
+
+<link rel="stylesheet" href="/index.css">
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.1/",
+    "react": "https://esm.sh/react@^19.2.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.1/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.559.0",
+    "lucide": "https://esm.sh/lucide@^0.559.0",
+    "dexie": "https://esm.sh/dexie@4.0.1"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/assets/index-meJHFqUU.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-D9RYvAJw.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          // Simulando o registro. Em produção, você criaria o arquivo service-worker.js na raiz
+          // navigator.serviceWorker.register('/service-worker.js');
+          console.log('Service Worker: Pronto para cache de tiles (Simulado)');
+        });
+      }
+    </script>
+</body>
+</html>

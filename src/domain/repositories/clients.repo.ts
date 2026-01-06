@@ -7,7 +7,7 @@ import {
 } from '../db';
 import { Cliente, ClienteDescontoPendente, ClientePreco, DepositoFisicoId, ModalidadeItem } from '../types';
 import { enqueueOutboxEvent } from '../sync/outbox';
-import { normalizeDepositId } from '../../src/domain/utils/dataSanitizer';
+import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 // Map between wire entity and domain Cliente (adds ativo bool default)
 const toDomain = (c: ClienteEntity): Cliente => {

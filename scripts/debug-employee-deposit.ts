@@ -1,4 +1,4 @@
-import { db } from '../src/domain/db';
+import { db } from '@/domain/db';
 
 async function debug() {
   console.log('🔍 === DIAGNÓSTICO COLABORADOR-DEPÓSITO ===\n');

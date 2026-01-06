@@ -4,8 +4,8 @@
  */
 
 import Dexie from 'dexie';
-import { Employee, Deposit } from '../src/domain/types';
-import { db } from '../src/domain/db';
+import { Employee, Deposit } from '@/domain/types';
+import { db } from '@/domain/db';
 
 async function fixUsers() {
   console.log('=== CORREÇÃO DE USUÁRIOS SEM DEPÓSITO ===\n');

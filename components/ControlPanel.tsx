@@ -18,7 +18,7 @@ import {
   AlertOctagon,
   Trash2
 } from 'lucide-react';
-import { performFactoryReset } from '../src/domain/storage';
+import { performFactoryReset } from '@/domain/storage';
 
 interface ControlPanelProps {
   onClose: () => void;

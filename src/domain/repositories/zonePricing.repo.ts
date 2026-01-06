@@ -1,7 +1,7 @@
 import { db } from '../db';
 import { ZonePricing } from '../types';
 import { enqueueOutboxEvent } from '../sync/outbox';
-import { normalizeDepositId } from '../../src/domain/utils/dataSanitizer';
+import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 const buildZonePricingId = (depositId: string, zoneId: string) => `${depositId}:${zoneId}`;
 

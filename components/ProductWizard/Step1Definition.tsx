@@ -12,8 +12,8 @@
 
 import React, { useState } from 'react';
 import { Package, Cylinder, RefreshCw, Box, ChevronRight, Loader2, Info } from 'lucide-react';
-import { db, generateId } from '../../src/domain/db';
-import { Produto } from '../../src/domain/types';
+import { db, generateId } from '@/domain/db';
+import { Produto } from '@/domain/types';
 
 interface Step1Props {
   onSuccess: (product: {

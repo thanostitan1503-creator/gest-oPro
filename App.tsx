@@ -6,7 +6,7 @@ import { NewServiceOrder } from './components/NewServiceOrder';
 import { ControlPanel } from './components/ControlPanel';
 import { SummaryModule } from './components/SummaryModule';
 import { FinancialModule } from './components/FinancialModule';
-import { InventoryCountModule } from './components/InventoryCountModule';
+
 import { SalesModalitiesModule } from './components/SalesModalitiesModule';
 import { TransactionModalitiesModule } from './components/TransactionModalitiesModule';
 import { ShiftClosingModal } from './components/ShiftClosingModal';
@@ -16,26 +16,26 @@ import { ThemesModule } from './components/ThemesModule';
 import { DeliveryReportModule } from './components/DeliveryReportModule';
 import { DeliverySettingsModal } from './components/DeliverySettingsModal';
 import { DeliveryDispatchModule } from './components/DeliveryDispatchModule';
-import { StockManagementModule } from './components/StockManagementModule';
+import { DepositsStockModule } from './components/DepositsStockModule';
+
 import { AlertsModule } from './components/AlertsModule';
 import { EmployeesModule } from './components/EmployeesModule';
 import { LoginScreen } from './components/LoginScreen';
 import { DriverPanel } from './components/DriverPanel'; 
 import { GasRobot } from './components/GasRobot';
 import { OpeningShiftModal } from './components/OpeningShiftModal';
-import { Colaborador, UserRole } from './src/domain/types';
-import { THEMES, ThemeId } from './src/domain/themes';
+import { Colaborador, UserRole } from '@/domain/types';
+import { THEMES, ThemeId } from '@/domain/themes';
 import {
   initStorage,
   getThemeBackgroundImage,
   getThemeBackgroundOpacity,
   setThemeBackgroundImage,
   setThemeBackgroundOpacity,
-} from './src/domain/storage';
-import { supabase } from './src/domain/supabaseClient';
-import { startAutoSync } from './src/domain/sync/syncService';
-import { syncAllFromSupabase } from './src/domain/sync/syncService';
-import { ShiftProvider, useShift } from './src/contexts/ShiftContext';
+} from '@/domain/storage';
+import { supabase } from '@/domain/supabaseClient';
+import { startSyncService, stopSyncService, syncNow } from '@/domain/sync/syncService';
+import { ShiftProvider, useShift } from '@/contexts/ShiftContext';
 
 const ShiftGate: React.FC<{ currentUser: Colaborador; children: React.ReactNode }> = ({ currentUser, children }) => {
   const { activeShift, loading } = useShift();
@@ -115,13 +115,13 @@ const App: React.FC = () => {
 
   // Offline-first sync (Outbox → Supabase)
   useEffect(() => {
-    const stop = startAutoSync();
-    return () => stop();
+    startSyncService();
+    return () => stopSyncService();
   }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      syncAllFromSupabase();
+      void syncNow({ log: true });
     }, 1000);
     return () => clearTimeout(timer);
   }, []);
@@ -269,10 +269,10 @@ const App: React.FC = () => {
       case 'nova-os': return <NewServiceOrder onClose={() => setActiveModule(null)} currentUser={currentUser} />;
       case 'clientes': return <ClientsModule onClose={() => setActiveModule(null)} userRole={currentUser.cargo === 'GERENTE' ? 'ADMIN' : 'COLABORADOR'} />;
       case 'painel': return <ControlPanel onClose={() => setActiveModule(null)} onNavigate={(m) => setActiveModule(m)} />;
-      case 'estoque': return <StockManagementModule onClose={() => setActiveModule(null)} currentUser={currentUser} />;
+
       case 'resumo': return <SummaryModule onClose={() => setActiveModule(null)} />;
       case 'financeiro': return <FinancialModule onClose={() => setActiveModule(null)} onNavigate={(m) => setActiveModule(m)} />;
-      case 'contagem': return <InventoryCountModule onClose={() => setActiveModule(null)} />;
+
       case 'sales-modalities': return <SalesModalitiesModule onClose={() => setActiveModule(null)} />;
       case 'transaction-modalities': return <TransactionModalitiesModule onClose={() => setActiveModule(null)} />;
       case 'fechar-caixa': return <ShiftClosingModal onClose={() => setActiveModule(null)} />;
@@ -281,6 +281,7 @@ const App: React.FC = () => {
       case 'delivery-settings': return <DeliverySettingsModal onClose={() => setActiveModule(null)} />;
       case 'alertas': return <AlertsModule onClose={() => setActiveModule(null)} />;
       case 'colaboradores': return <EmployeesModule onClose={() => setActiveModule(null)} />;
+      case 'depositos-estoque': return <DepositsStockModule onClose={() => setActiveModule(null)} currentUser={currentUser} />;
       case 'temas':
         return (
           <ThemesModule

@@ -22,18 +22,18 @@ import {
   Barcode,
   Truck
 } from 'lucide-react';
-import { NewExpenseModal } from '../src/components/NewExpenseModal';
-import { NewReceivableModal } from '../src/components/NewReceivableModal';
-import { GoalConfigModal } from '../src/components/GoalConfigModal';
+import { NewExpenseModal } from '@/components/NewExpenseModal';
+import { NewReceivableModal } from '@/components/NewReceivableModal';
+import { GoalConfigModal } from '@/components/GoalConfigModal';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../src/domain/db';
-import { addReceivablePayment, deleteReceivable, updateReceivable, createReceivable, updateReceivablePayment } from '../src/domain/repositories/receivables.repo';
-import { registerCashFlow } from '../src/domain/repositories/cashflow.repo';
-import { BoletoManagerModal } from '../src/components/Financeiro/BoletoManagerModal';
-import type { Boleto } from '../src/types/boleto';
-import * as boletosRepo from '../src/repositories/boletosRepo';
-import { useShift } from '../src/contexts/ShiftContext';
-import { normalizeDepositId } from '../src/domain/utils/dataSanitizer';
+import { db } from '@/domain/db';
+import { addReceivablePayment, deleteReceivable, updateReceivable, createReceivable, updateReceivablePayment } from '@/domain/repositories/receivables.repo';
+import { registerCashFlow } from '@/domain/repositories/cashflow.repo';
+import { BoletoManagerModal } from '@/components/Financeiro/BoletoManagerModal';
+import type { Boleto } from '@/types/boleto';
+import * as boletosRepo from '@/repositories/boletosRepo';
+import { useShift } from '@/contexts/ShiftContext';
+import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 interface FinancialModuleProps {
   onClose: () => void;
@@ -665,7 +665,8 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
 
     auditOrders.forEach((o) => {
       const isConcluded = String(o.status ?? '').toUpperCase() === 'CONCLUIDA';
-      const isDelivery = String(o.tipoAtendimento ?? '').toUpperCase() === 'ENTREGA';
+      // Novo fluxo (v2.0): DELIVERY é o tipo correto para entregas
+      const isDelivery = String(o.tipoAtendimento ?? '').toUpperCase() === 'DELIVERY';
       if (isConcluded && isDelivery && o.entregadorId) {
         const key = String(o.entregadorId);
         driverCounts[key] = (driverCounts[key] || 0) + 1;
