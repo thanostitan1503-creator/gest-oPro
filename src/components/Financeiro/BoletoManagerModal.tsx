@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Barcode, Check, Copy, ExternalLink, Loader2, Pencil, X } from 'lucide-react';
 import type { AccountsReceivable } from '@/domain/db';
-import { updateReceivable } from '@/domain/repositories/receivables.repo';
+// ⚠️ REMOVIDO v3.0: import { updateReceivable } from '@/domain/repositories/receivables.repo'; (use Services)
 import type { Boleto, BoletoStatus } from '../../types/boleto';
-import * as boletosRepo from '../../repositories/boletosRepo';
+// ⚠️ REMOVIDO v3.0: import * as boletosRepo from '../../repositories/boletosRepo';
 
 type BoletoManagerModalProps = {
   receivable: AccountsReceivable;

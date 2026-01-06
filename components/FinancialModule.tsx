@@ -27,13 +27,13 @@ import { NewReceivableModal } from '@/components/NewReceivableModal';
 import { GoalConfigModal } from '@/components/GoalConfigModal';
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-import { addReceivablePayment, deleteReceivable, updateReceivable, createReceivable, updateReceivablePayment } from '@/domain/repositories/receivables.repo';
-import { registerCashFlow } from '@/domain/repositories/cashflow.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { BoletoManagerModal } from '@/components/Financeiro/BoletoManagerModal';
 import type { Boleto } from '@/types/boleto';
-import * as boletosRepo from '@/repositories/boletosRepo';
+// ⚠️ REMOVIDO v3.0: import * as boletosRepo from '@/repositories/boletosRepo';
 import { useShift } from '@/contexts/ShiftContext';
-import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
+// ⚠️ REMOVIDO v3.0: import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 interface FinancialModuleProps {
   onClose: () => void;

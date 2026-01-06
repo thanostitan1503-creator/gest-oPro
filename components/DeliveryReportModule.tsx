@@ -12,18 +12,12 @@ import {
   X, Truck, Map as MapIcon, Flame, Activity, MapPin, Plus, Trash2, Search
 } from 'lucide-react';
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
-import { getOrders, getDriverLocations } from '@/domain/storage';
+// ⚠️ REMOVIDO v3.0: import { getOrders, getDriverLocations } from '@/domain/storage';
 import { OrdemServico, DriverLocation } from '@/domain/types';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-import { 
-  upsertDeliveryZone,
-  deleteDeliveryZone,
-  upsertDeliverySector,
-  deleteDeliverySector,
-  moveDeliverySector,
-} from '@/domain/repositories/deliveryZones.repo';
-import { upsertZonePricing } from '@/domain/repositories/zonePricing.repo';
-import { upsertDeposit } from '@/domain/repositories/deposits.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 
 type LatLngTuple = [number, number];
 type LatLngPolygon = LatLngTuple[][];

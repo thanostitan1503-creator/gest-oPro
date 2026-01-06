@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { X, ChevronRight, ArrowLeft, Info } from 'lucide-react';
 import { Produto } from '@/domain/types';
 import { generateId } from '@/utils/idGenerator';
-import { createProduct, updateProduct, upsertPricing, applyMovement, getBalance } from '@/domain/repositories/index';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 
 type Step = 'definition' | 'pricing';
 

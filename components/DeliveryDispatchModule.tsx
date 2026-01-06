@@ -7,9 +7,9 @@ import {
   Play, CheckCheck, RotateCcw, XCircle
 } from 'lucide-react';
 import { DeliveryJob, DriverPresence, DeliveryStatus } from '@/domain/types';
-import { listDeliveryJobs } from '@/domain/repositories/index';
-import { startRoute, completeJob, returnJob, cancelJob } from '@/domain/delivery.logic';
-import { getAllDriversStatus } from '@/domain/driverPresence.logic';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: import { startRoute, completeJob, returnJob, cancelJob } from '@/domain/delivery.logic';
+// ⚠️ REMOVIDO v3.0: import { getAllDriversStatus } from '@/domain/driverPresence.logic';
 
 interface DeliveryDispatchModuleProps {
   onClose: () => void;

@@ -13,18 +13,7 @@ import {
 } from '@/domain/types';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 
-import {
-  listClients,
-  upsertClient,
-  deleteClient,
-  listClientPrices,
-  upsertClientPrice,
-  deleteClientPrice,
-  listClientDiscounts,
-  upsertClientDiscount,
-  deleteClientDiscount,
-  listDeposits,
-} from '@/domain/repositories/index';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 
 interface ClientsModuleProps {
   onClose: () => void;

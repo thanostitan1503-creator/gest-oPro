@@ -5,15 +5,16 @@ import {
 import { Maquininha, DepositoFisicoId } from '@/domain/types';
 import { PaymentMethod } from '@/types';
 import { Deposit } from '@/domain/types';
-import {
-  deleteMachine,
-  deletePaymentMethod,
-  listMachines,
-  listPaymentMethods,
-  upsertMachine,
-  recordAudit,
-  listDeposits,
-} from '@/domain/repositories/index';
+// ⚠️ REMOVIDO v3.0 (use Services):
+// import {
+//   deleteMachine,
+//   deletePaymentMethod,
+//   listMachines,
+//   listPaymentMethods,
+//   upsertMachine,
+//   recordAudit,
+//   listDeposits,
+// } from '@/domain/repositories/index';
 import { PaymentMethodsModal } from './PaymentMethodsModal';
 import { PaymentMethodsList } from './PaymentMethodsList';
 

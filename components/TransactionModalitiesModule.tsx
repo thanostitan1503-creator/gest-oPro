@@ -9,13 +9,8 @@ import {
   ModalidadeVenda, RotuloModalidade, RegraEstoqueModalidade, 
   Produto, DepositoFisicoId 
 } from '@/domain/types';
-import { 
-  getSalesModalities, saveSalesModalities, 
-  getModalityLabels, saveModalityLabels, 
-  getStockRules, saveStockRules,
-  getProducts 
-} from '@/domain/storage';
-import { listDeposits } from '@/domain/repositories/deposits.repo';
+// ⚠️ REMOVIDO v3.0: import { getSalesModalities, saveSalesModalities, getModalityLabels, saveModalityLabels, getStockRules, saveStockRules, getProducts } from '@/domain/storage';
+// ⚠️ REMOVIDO v3.0: import { listDeposits } from '@/domain/repositories';
 import { Deposit } from '@/domain/types';
 
 interface TransactionModalitiesModuleProps {

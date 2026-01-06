@@ -15,22 +15,11 @@ import { NewClientModal } from './NewClientModal';
 import { ServiceOrderItems } from './ServiceOrderItems';
 import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '@/domain/types';
 import { PaymentMethod } from '@/types';
-import {
-  listClients,
-  upsertClient,
-  listProducts,
-  createProduct,
-  updateProduct,
-  listServiceOrders,
-  upsertServiceOrder,
-  updateServiceOrderStatus,
-  listPaymentMethods,
-  listEmployees,
-} from '@/domain/repositories/index';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
-import { createDeliveryJobFromOS } from '@/domain/delivery.logic';
-import { getEmployees } from '@/domain/storage';
+// ⚠️ REMOVIDO v3.0: import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
+// ⚠️ REMOVIDO v3.0: import { createDeliveryJobFromOS } from '@/domain/delivery.logic';
+// ⚠️ REMOVIDO v3.0: import { getEmployees } from '@/domain/storage';
 
 const getSessionUserName = () => {
   if (typeof localStorage === 'undefined') return null;

@@ -8,8 +8,8 @@ import {
 } from 'lucide-react';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { Deposit, Colaborador, MovimentoEstoque, Product, StockMovementRule } from '@/domain/types';
-import { upsertDeposit, deleteDeposit, listDeposits } from '@/domain/repositories/deposits.repo';
-import { applyMovement } from '@/domain/repositories/stock.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 
 // ============================================================================
 // TIPOS

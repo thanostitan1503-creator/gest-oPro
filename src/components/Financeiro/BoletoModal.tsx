@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Barcode, FileText, Link as LinkIcon, Loader2, Save, X } from 'lucide-react';
 import type { Boleto } from '../../types/boleto';
-import * as boletosRepo from '../../repositories/boletosRepo';
+// ⚠️ REMOVIDO v3.0: import * as boletosRepo from '../../repositories/boletosRepo';
 
 type BoletoModalProps = {
   isOpen: boolean;

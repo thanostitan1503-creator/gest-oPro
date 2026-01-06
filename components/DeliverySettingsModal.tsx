@@ -11,14 +11,7 @@ import { FeatureGroup, MapContainer, Pane, Polygon, TileLayer, Tooltip, useMap }
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { supabase } from '@/domain/supabaseClient';
 import { Deposito, DeliverySector, DeliveryZone } from '@/domain/types';
-import {
-  deleteDeliverySector,
-  deleteDeliveryZone,
-  moveDeliverySector,
-  upsertDeliverySector,
-  upsertZonePricing,
-  upsertDeposit,
-} from '@/domain/repositories/index';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 
 interface DeliverySettingsModalProps {
   onClose: () => void;

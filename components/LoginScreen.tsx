@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Cylinder, Lock, User, ArrowRight, Loader2, Save, Factory, Wifi, WifiOff } from 'lucide-react';
-import { listEmployees, upsertEmployee } from '@/domain/repositories/employees.repo';
-import { upsertDeposit } from '@/domain/repositories/deposits.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { Colaborador, Deposito } from '@/domain/types';
 import { DASHBOARD_ITEMS } from '../constants';
 import { supabase } from '@/domain/supabaseClient';

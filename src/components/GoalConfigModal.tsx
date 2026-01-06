@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { generateId } from '@/utils/idGenerator';
-import { enqueueOutboxEvent } from '@/domain/sync/outbox';
+// ⚠️ REMOVIDO v3.0: import { enqueueOutboxEvent } from '@/domain/sync/outbox';
 import { FinancialSettings } from '../types';
 
 interface GoalConfigModalProps {

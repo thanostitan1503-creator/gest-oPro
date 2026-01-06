@@ -6,9 +6,9 @@ import {
   CheckCircle2, AlertTriangle, AlertOctagon,
   Save, Search, Eye
 } from 'lucide-react';
-import { scanSystemForAlerts } from '@/domain/alert.logic';
-import { getAlertsConfig, saveAlertsConfig } from '@/domain/storage';
-import { listProducts } from '@/domain/repositories/index';
+// ⚠️ REMOVIDO v3.0: import { scanSystemForAlerts } from '@/domain/alert.logic';
+// ⚠️ REMOVIDO v3.0: import { getAlertsConfig, saveAlertsConfig } from '@/domain/storage';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { SystemAlert, AlertConfig, Produto } from '@/domain/types';
 
 const isDeliveryFeeProduct = (product: any) => {

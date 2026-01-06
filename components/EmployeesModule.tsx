@@ -11,7 +11,7 @@ import {
   CheckSquare, Square, LayoutGrid, Ban, CheckCircle2
 } from 'lucide-react';
 import { Colaborador, Deposito } from '@/domain/types';
-import { listEmployees, upsertEmployee, deleteEmployee } from '@/domain/repositories/employees.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { DASHBOARD_ITEMS } from '../constants';
 
 interface EmployeesModuleProps {

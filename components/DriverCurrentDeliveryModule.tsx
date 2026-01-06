@@ -5,9 +5,9 @@ import {
   ChevronRight, Package, DollarSign, ArrowLeft
 } from 'lucide-react';
 import { Colaborador, DeliveryJob } from '@/domain/types';
-import { listDeliveryJobsByDriver } from '@/domain/repositories/index';
-import { updateDriverHeartbeat } from '@/domain/driverPresence.logic';
-import { completeJob, returnJob } from '@/domain/delivery.logic';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: import { updateDriverHeartbeat } from '@/domain/driverPresence.logic';
+// ⚠️ REMOVIDO v3.0: import { completeJob, returnJob } from '@/domain/delivery.logic';
 
 interface DriverCurrentDeliveryModuleProps {
   currentUser: Colaborador;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PaymentMethod } from '@/types';
-import { upsertPaymentMethod } from '@/domain/repositories/paymentMethods.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { X } from 'lucide-react';
 
 interface PaymentMethodsModalProps {

@@ -3,8 +3,8 @@ import { AlertTriangle, CheckSquare, ClipboardCheck, Save, X } from 'lucide-reac
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { useShift } from '@/contexts/ShiftContext';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-import { getStockMapForDeposit } from '@/domain/repositories/stock.repo';
-import { saveShiftStockAudits } from '@/domain/repositories/shift.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import type { Produto, ShiftStockAudit } from '@/domain/types';
 
 interface ShiftClosingModalProps {

@@ -3,8 +3,8 @@ import { ClipboardCheck, Factory, AlertTriangle, Save } from 'lucide-react';
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { useShift } from '@/contexts/ShiftContext';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-import { getStockMapForDeposit } from '@/domain/repositories/stock.repo';
-import { listProducts } from '@/domain/repositories/products.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import type { Colaborador, Produto } from '@/domain/types';
 
 type OpeningShiftModalProps = {

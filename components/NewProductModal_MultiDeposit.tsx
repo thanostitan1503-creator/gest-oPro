@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import type { FC } from 'react';
 import { X, Plus, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { Produto, StockMovementRule, TipoProduto, ProductPricing } from '@/domain/types';
-import { bulkUpsertPricing, getPricingByProduct, listExchangeRulesByProduct, getBalance } from '@/domain/repositories/index';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { generateId } from '@/utils/idGenerator';
 
 interface DepositPricing {

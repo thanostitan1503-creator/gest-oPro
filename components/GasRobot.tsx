@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Move } from 'lucide-react';
 
-import { useSystemAlerts } from '../src/hooks/useSystemAlerts';
-
 import { Maps } from '../src/utils/navigation';
 
 
@@ -26,10 +24,8 @@ export const GasRobot: React.FC = () => {
 
   const [hasMoved, setHasMoved] = useState(false);
 
-
-
-  const alerts = useSystemAlerts();
-
+  // TODO v3.0: Implementar novo sistema de alertas (sem Dexie)
+  const alerts: any[] = [];
   const alertCount = alerts.length;
 
   const currentAlert = alertCount > 0 ? alerts[alertIndex % alertCount] : null;

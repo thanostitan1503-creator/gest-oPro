@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { X } from 'lucide-react';
 import { generateId } from '@/utils/idGenerator';
-import { getEmployees } from '@/domain/storage';
-import { enqueueOutboxEvent } from '@/domain/sync/outbox';
+// ⚠️ REMOVIDO v3.0: import { getEmployees } from '@/domain/storage';
+// ⚠️ REMOVIDO v3.0: import { enqueueOutboxEvent } from '@/domain/sync/outbox';
 // IMPORTANTE: Importando o componente que acabamos de criar
 import { ServiceOrderItems } from './ServiceOrderItems'; 
 

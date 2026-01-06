@@ -241,7 +241,51 @@ R: Sim. Qualquer navegador moderno (Chrome, Safari, etc.).
 
 ---
 
+## 🚀 COMO FAZER DEPLOY NA VERCEL
+
+### Passo a Passo:
+
+1. **Criar conta:**
+   - Acesse https://vercel.com
+   - Login com GitHub
+
+2. **Importar projeto:**
+   - "Add New" → "Project"
+   - Selecione o repositório GitHub `gest-oPro`
+
+3. **Configurar:**
+   - **Framework:** Vite (auto-detectado)
+   - **Build Command:** `npm run build` (padrão)
+   - **Output:** `dist` (padrão)
+
+4. **Environment Variables (obrigatório):**
+   ```
+   VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+   VITE_SUPABASE_ANON_KEY=sua-chave-anon-key
+   ```
+
+5. **Deploy:**
+   - Clique "Deploy"
+   - Aguarde 2-3 minutos
+   - Pronto! Site online em `https://seu-projeto.vercel.app`
+
+### Deploy Automático:
+
+A partir da primeira configuração:
+
+```bash
+git add .
+git commit -m "feat: nova funcionalidade"
+git push origin main
+
+# Vercel detecta push → faz build → atualiza site automaticamente
+```
+
+**Monitoramento:** Dashboard Vercel mostra logs de build em tempo real.
+
+---
+
 **Versão:** 3.0 - Online Real-Time  
 **Tipo:** Aplicativo Web (SPA - Single Page Application)  
-**Hospedagem:** Vercel (frontend) + Supabase (backend)  
-**Status:** ✅ Arquitetura definida e implementada
+**Hospedagem:** Vercel.com (frontend) + Supabase.com (backend)  
+**Status:** ✅ Migração Concluída | Build Passou | Pronto para Deploy

@@ -18,7 +18,7 @@ import {
   AlertOctagon,
   Trash2
 } from 'lucide-react';
-import { performFactoryReset } from '@/domain/storage';
+// ⚠️ REMOVIDO v3.0: import { performFactoryReset } from '@/domain/storage';
 
 interface ControlPanelProps {
   onClose: () => void;

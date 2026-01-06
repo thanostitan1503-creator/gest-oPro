@@ -6,6 +6,36 @@
 
 ---
 
+## ⚡ ARQUITETURA: ANTES vs DEPOIS
+
+### ❌ ANTES (v2.1 - Offline-First) - **DESCONTINUADO**
+```
+Usuário → React → Dexie (IndexedDB) → Fila de Sincronização → Supabase
+                    ↓
+              Dados Presos Localmente
+              (Risco de perda)
+```
+- ❌ Funcionava sem internet
+- ❌ Dados salvos no navegador (IndexedDB)
+- ❌ Fila de sincronização (complexa)
+- ❌ 3 camadas de código (UI → Repo → Sync)
+- ❌ **PROBLEMA:** Dados podiam ficar presos no cache, sem garantia de sincronização
+
+### ✅ AGORA (v3.0 - Online-Only) - **ARQUITETURA ATUAL**
+```
+Usuário → React → Services → Supabase
+                             ↓
+                    Fonte Única da Verdade
+                    (Zero perda de dados)
+```
+- ✅ **Requer internet 100% do tempo**
+- ✅ Dados **SEMPRE** no Supabase (nunca no navegador)
+- ✅ Sem fila, sem cache local
+- ✅ 2 camadas de código (UI → Services)
+- ✅ **GARANTIA:** Ou salva no servidor, ou mostra erro - nunca perde dados
+
+---
+
 ## 🌐 TIPO DE APLICATIVO: WEB APP (Como um Site)
 
 **O projeto NÃO é mais um app offline.** É um **aplicativo web moderno** hospedado na **Vercel.com**, acessado via navegador.
@@ -16,6 +46,7 @@
 - 📱 **Multiplataforma:** Funciona em Android, iOS, Windows, Mac, Linux
 - 🚀 **PWA (Progressive Web App):** Pode ser "instalado" como app, mas ainda precisa de internet
 - ❌ **NÃO funciona offline:** Se a conexão cair, o sistema para (com aviso claro ao usuário)
+- 🏠 **Hospedagem:** Vercel.com (frontend) + Supabase.com (backend)
 
 ---
 
@@ -94,7 +125,37 @@ Sistema ERP (Enterprise Resource Planning) focado na gestão de **Distribuidoras
 5. Dados só existem no Supabase - **zero risco de "sumir" depois**
 6. **Deploy:** `git push origin main` → Vercel atualiza site em ~2 minutos
 
-### 2.2 Tratamento de Erros de Rede
+### 2.2 Fluxo de Deploy (Vercel.com)
+
+**Como o código vai para produção:**
+
+```
+Desenvolvedor Local → Git Push → GitHub → Vercel (Build Automático) → Site Atualizado
+                                    ↓
+                          Detecta commit no branch main
+                                    ↓
+                          1. npm install (dependências)
+                          2. npm run build (Vite)
+                          3. Deploy dist/ para CDN
+                                    ↓
+                          Site acessível em 2-3 minutos
+```
+
+**Configuração Vercel (Obrigatória):**
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+- **Framework Preset:** Vite
+- **Environment Variables:**
+  ```
+  VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+  VITE_SUPABASE_ANON_KEY=sua-chave-publica-anon
+  ```
+
+**URLs de Acesso:**
+- **Produção:** `https://seuerp.vercel.app` (domínio personalizado)
+- **Preview:** `https://seuerp-git-main-usuario.vercel.app` (auto-gerado)
+
+### 2.3 Tratamento de Erros de Rede
 
 ```typescript
 // ✅ JEITO CORRETO (v3.0)
@@ -809,26 +870,47 @@ localStorage.setItem('deposits', JSON.stringify(data)); // NUNCA FAZER ISSO
 
 ### 17.2 Deploy no Vercel
 
-**Configuração (.env.production):**
+**Passo a Passo Completo:**
+
+1. **Criar conta na Vercel:**
+   - Acesse https://vercel.com
+   - Faça login com GitHub
+
+2. **Importar Projeto:**
+   - Clique em "Add New" → "Project"
+   - Selecione o repositório GitHub
+   - Vercel detecta automaticamente que é um projeto Vite
+
+3. **Configurar Build Settings:**
+   - **Framework Preset:** Vite
+   - **Build Command:** `npm run build`
+   - **Output Directory:** `dist`
+   - **Install Command:** `npm install` (padrão)
+
+4. **Adicionar Environment Variables:**
+   ```
+   VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+   VITE_SUPABASE_ANON_KEY=sua-chave-publica-anon
+   ```
+
+5. **Deploy:**
+   - Clique em "Deploy"
+   - Aguarde 2-3 minutos
+   - Site fica disponível em: `https://seu-projeto.vercel.app`
+
+**Deploy Automático (após primeira configuração):**
 ```bash
-VITE_SUPABASE_URL=https://seu-projeto.supabase.co
-VITE_SUPABASE_ANON_KEY=sua-chave-publica-anon
+# Qualquer commit no branch main dispara build automático
+git add .
+git commit -m "feat: nova funcionalidade"
+git push origin main
+# Vercel detecta, faz build e atualiza site automaticamente
 ```
 
-**Comandos:**
-```bash
-# Build de produção
-npm run build
-
-# Deploy (automático via Git)
-git push origin main  # Vercel detecta e deploya
-```
-
-**Configurações Vercel:**
-- **Build Command:** `npm run build`
-- **Output Directory:** `dist`
-- **Install Command:** `npm install`
-- **Framework Preset:** Vite
+**Monitoramento:**
+- Dashboard Vercel mostra logs de build em tempo real
+- Se o build falhar, você recebe notificação por email
+- Pode fazer rollback para versão anterior com 1 clique
 
 ### 17.3 Configuração do Supabase
 

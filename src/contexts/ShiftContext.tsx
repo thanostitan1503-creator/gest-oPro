@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Colaborador, WorkShift } from '@/domain/types';
-import { closeShift as closeShiftRepo, getOpenShiftForUser, openShift as openShiftRepo } from '@/domain/repositories/shift.repo';
+// ⚠️ REMOVIDO v3.0: import { closeShift as closeShiftRepo, getOpenShiftForUser, openShift as openShiftRepo } from '@/domain/repositories/shift.repo';
 
 type ShiftContextValue = {
   activeShift: WorkShift | null;

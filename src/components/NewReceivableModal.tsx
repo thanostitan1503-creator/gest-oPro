@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { Cliente } from '@/domain/types';
-import { createReceivable } from '@/domain/repositories/receivables.repo';
+// ⚠️ REMOVIDO v3.0: import { createReceivable } from '@/domain/repositories/receivables.repo'; (use Services)
 
 interface NewReceivableModalProps {
   isOpen: boolean;

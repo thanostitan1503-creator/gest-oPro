@@ -13,11 +13,11 @@ import {
   FileText,
   Activity
 } from 'lucide-react';
-import { listServiceOrders } from '@/domain/repositories/serviceOrders.repo';
-import { listDeposits } from '@/domain/repositories/deposits.repo';
-import { listEmployees } from '@/domain/repositories/employees.repo';
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 import { OrdemServico, LogHistoricoOS } from '@/domain/types';
-import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
+// ⚠️ REMOVIDO v3.0: import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);

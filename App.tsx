@@ -26,13 +26,6 @@ import { GasRobot } from './components/GasRobot';
 import { OpeningShiftModal } from './components/OpeningShiftModal';
 import { Colaborador, UserRole } from '@/domain/types';
 import { THEMES, ThemeId } from '@/domain/themes';
-import {
-  initStorage,
-  getThemeBackgroundImage,
-  getThemeBackgroundOpacity,
-  setThemeBackgroundImage,
-  setThemeBackgroundOpacity,
-} from '@/domain/storage';
 import { supabase } from '@/domain/supabaseClient';
 import { Toaster } from 'sonner';
 import { ShiftProvider, useShift } from '@/contexts/ShiftContext';
@@ -57,9 +50,6 @@ const ShiftGate: React.FC<{ currentUser: Colaborador; children: React.ReactNode 
 };
 
 const App: React.FC = () => {
-  // -- Init State --
-  const [isStorageReady, setIsStorageReady] = useState(false);
-
   // -- Auth State --
   const [currentUser, setCurrentUser] = useState<Colaborador | null>(null);
 
@@ -72,24 +62,11 @@ const App: React.FC = () => {
   const [currentTheme, setCurrentTheme] = useState<ThemeId>(() => {
     return (localStorage.getItem('gp_theme') as ThemeId) || 'light';
   });
-  const [backgroundImage, setBackgroundImage] = useState<string | null>(() => {
-    return getThemeBackgroundImage();
-  });
-  const [backgroundOpacity, setBackgroundOpacity] = useState<number>(() => {
-    return getThemeBackgroundOpacity();
-  });
 
   // Initialize System (Load Data from DB)
   useEffect(() => {
     const startSystem = async () => {
       console.log('Iniciando o sistema...');
-      const storageInitialized = await initStorage();
-      console.log('Storage inicializado:', storageInitialized);
-
-      if (storageInitialized) {
-        setBackgroundImage(getThemeBackgroundImage());
-        setBackgroundOpacity(getThemeBackgroundOpacity());
-      }
       
       // Restore Session
       const session = localStorage.getItem('gp_session');
@@ -102,13 +79,6 @@ const App: React.FC = () => {
           localStorage.removeItem('gp_session');
         }
       }
-      
-      if (!storageInitialized) {
-        console.error('Erro ao inicializar o storage. Forçando estado pronto.');
-        setIsStorageReady(true);
-      }
-      
-      setIsStorageReady(true);
     };
     startSystem();
   }, []);
@@ -215,16 +185,6 @@ const App: React.FC = () => {
     window.addEventListener('gp:navigate', handleNavigate as EventListener);
     return () => window.removeEventListener('gp:navigate', handleNavigate as EventListener);
   }, []);
-
-  // Loading Screen
-  if (!isStorageReady) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-primary" />
-        <p className="text-sm font-bold tracking-widest uppercase">Inicializando Banco de Dados...</p>
-      </div>
-    );
-  }
 
   // If not logged in, show Login Screen
   if (!currentUser) {
