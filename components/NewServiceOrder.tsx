@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { 
   X, Save, Plus, Search, Trash2, 
   User, Cylinder, ShoppingCart, CreditCard, Banknote, Coins,
@@ -27,7 +27,7 @@ import {
   listPaymentMethods,
   listEmployees,
 } from '@/domain/repositories/index';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 import { createDeliveryJobFromOS } from '@/domain/delivery.logic';
 import { getEmployees } from '@/domain/storage';
@@ -2318,6 +2318,9 @@ export const NewServiceOrder: React.FC<NewServiceOrderProps> = ({ onClose, curre
     </div>
   );
 };
+
+
+
 
 
 

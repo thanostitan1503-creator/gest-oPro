@@ -270,3 +270,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({ onClose, onNavigate 
     </div>
   );
 };
+
+
+

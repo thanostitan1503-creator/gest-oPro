@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { X, ChevronRight, ArrowLeft, Info } from 'lucide-react';
 import { Produto } from '@/domain/types';
-import { generateId } from '@/domain/db';
+import { generateId } from '@/utils/idGenerator';
 import { createProduct, updateProduct, upsertPricing, applyMovement, getBalance } from '@/domain/repositories/index';
 
 type Step = 'definition' | 'pricing';
@@ -409,3 +409,5 @@ export const NewProductWizard: React.FC<WizardProps> = ({ onClose, currentDeposi
 };
 
 export default NewProductWizard;
+
+

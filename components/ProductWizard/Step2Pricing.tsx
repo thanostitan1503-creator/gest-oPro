@@ -11,7 +11,7 @@
 
 import React, { useState } from 'react';
 import { DollarSign, Package, ArrowLeft, Check, Loader2, AlertCircle } from 'lucide-react';
-import { db, generateId } from '@/domain/db';
+import { generateId } from '@/utils/idGenerator';
 import { MovimentoEstoque } from '@/domain/types';
 import { CreatedProductInfo } from './index';
 
@@ -297,3 +297,6 @@ export const Step2Pricing: React.FC<Step2Props> = ({
     </form>
   );
 };
+
+
+

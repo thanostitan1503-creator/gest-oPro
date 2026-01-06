@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { 
   X, Users, Search, Plus, Trash2, 
   FileText, Save, ChevronRight, Tag, AlertCircle,
@@ -11,7 +11,7 @@ import {
   Cliente, ClientePreco, ClienteDescontoPendente, 
   UserRole, DepositoFisicoId, ModalidadeItem 
 } from '@/domain/types';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 
 import {
   listClients,
@@ -724,3 +724,6 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
     </div>
   );
 };
+
+
+

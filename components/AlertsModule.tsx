@@ -348,3 +348,6 @@ export const AlertsModule: React.FC<AlertsModuleProps> = ({ onClose }) => {
     </div>
   );
 };
+
+
+

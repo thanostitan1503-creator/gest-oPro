@@ -72,3 +72,6 @@ export function PaymentMethodsList({ methods, onEdit, onDelete }: PaymentMethods
     </div>
   );
 }
+
+
+

@@ -418,3 +418,6 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
     </div>
   );
 };
+
+
+

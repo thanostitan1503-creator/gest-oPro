@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { Cliente } from '@/domain/types';
 import { createReceivable } from '@/domain/repositories/receivables.repo';
 
@@ -180,3 +180,6 @@ export function NewReceivableModal({ isOpen, onClose }: NewReceivableModalProps)
     </div>
   );
 }
+
+
+

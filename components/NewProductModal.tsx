@@ -576,3 +576,6 @@ const NewProductModal: FC<Props> = ({ isOpen, onClose, deposits, products, defau
 };
 
 export default NewProductModal;
+
+
+

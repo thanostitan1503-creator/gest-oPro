@@ -5,10 +5,10 @@ import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import 'leaflet.heat';
 import { X, Truck, Plus, Trash2, Map as MapIcon, Palette } from 'lucide-react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { EditControl } from 'react-leaflet-draw';
 import { FeatureGroup, MapContainer, Pane, Polygon, TileLayer, Tooltip, useMap } from 'react-leaflet';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { supabase } from '@/domain/supabaseClient';
 import { Deposito, DeliverySector, DeliveryZone } from '@/domain/types';
 import {
@@ -1610,3 +1610,6 @@ export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ on
     </div>
   );
 };
+
+
+

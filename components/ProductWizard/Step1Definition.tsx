@@ -12,7 +12,7 @@
 
 import React, { useState } from 'react';
 import { Package, Cylinder, RefreshCw, Box, ChevronRight, Loader2, Info } from 'lucide-react';
-import { db, generateId } from '@/domain/db';
+import { generateId } from '@/utils/idGenerator';
 import { Produto } from '@/domain/types';
 
 interface Step1Props {
@@ -328,3 +328,6 @@ export const Step1Definition: React.FC<Step1Props> = ({ onSuccess, onCancel, onE
     </form>
   );
 };
+
+
+

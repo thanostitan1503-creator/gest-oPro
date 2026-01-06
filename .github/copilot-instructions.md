@@ -1,13 +1,37 @@
 # 🧠 MANIFESTO DO PROJETO: ERP DISTRIBUIDORA DE GÁS (GasDistributionERP)
 
-> **VERSÃO:** 2.1 | **DATA:** 05/01/2026  
-> **LEIA COMPLETAMENTE ANTES DE QUALQUER ALTERAÇÃO**
+> **VERSÃO:** 3.0 - ONLINE REAL-TIME | **DATA:** 06/01/2026  
+> **LEIA COMPLETAMENTE ANTES DE QUALQUER ALTERAÇÃO**  
+> **⚠️ MUDANÇA CRÍTICA:** Migrado de Offline-First para **Online-Only (Aplicativo Web)**
+
+---
+
+## 🌐 TIPO DE APLICATIVO: WEB APP (Como um Site)
+
+**O projeto NÃO é mais um app offline.** É um **aplicativo web moderno** hospedado na **Vercel.com**, acessado via navegador.
+
+### Características:
+- 🌐 **100% Online:** Requer internet o tempo todo
+- 🖥️ **Acessível via navegador:** `https://seuerp.vercel.app`
+- 📱 **Multiplataforma:** Funciona em Android, iOS, Windows, Mac, Linux
+- 🚀 **PWA (Progressive Web App):** Pode ser "instalado" como app, mas ainda precisa de internet
+- ❌ **NÃO funciona offline:** Se a conexão cair, o sistema para (com aviso claro ao usuário)
 
 ---
 
 ## 1. RESUMO DO PROJETO
 
-Sistema ERP (Enterprise Resource Planning) focado na gestão de **Distribuidoras de Gás e Água**. O objetivo é substituir planilhas e controles manuais por um sistema web moderno (PWA), centralizado e seguro.
+Sistema ERP (Enterprise Resource Planning) focado na gestão de **Distribuidoras de Gás e Água**. O objetivo é substituir planilhas e controles manuais por um sistema web moderno, **online em tempo real**, centralizado e seguro.
+
+### 🎯 ARQUITETURA v3.0: "ONLINE REAL-TIME"
+**Zero Complexidade, 100% Confiável**
+
+- ✅ **Conexão Direta:** Frontend (Vercel) → Supabase (sem intermediários)
+- ✅ **Fonte Única da Verdade:** Supabase é o único banco de dados
+- ✅ **Zero Cache Local:** Dados nunca ficam presos no navegador
+- ✅ **Erros Transparentes:** Se falhar, avisa na hora (toast vermelho)
+- ✅ **Hospedagem Moderna:** Vercel.com (frontend) + Supabase.com (backend)
+- ✅ **Deploy Automático:** `git push` → Site atualiza em 2 minutos
 
 **Escopo Principal:**
 - PDV/Frente de Caixa (vendas)
@@ -24,31 +48,67 @@ Sistema ERP (Enterprise Resource Planning) focado na gestão de **Distribuidoras
 |--------|------------|-------------|
 | **Frontend** | React + TypeScript | Vite como bundler |
 | **Estilização** | Tailwind CSS | Mobile-first |
-| **Banco Local** | Dexie (IndexedDB) | Offline-first obrigatório |
-| **Banco Cloud** | Supabase (PostgreSQL) | Sincronização assíncrona |
+| **Banco de Dados** | Supabase (PostgreSQL) | **ÚNICO** banco - nada local |
 | **Autenticação** | Supabase Auth | - |
+| **Hospedagem Frontend** | Vercel | Deploy automático |
 | **IDs** | UUID v4 | Obrigatório em todas as tabelas |
 | **Ambiente** | VS Code (Windows) | - |
 
-### 2.1 Arquitetura Offline-First (CRÍTICO)
+### 2.1 Arquitetura Online Real-Time (CRÍTICO)
+
+**IMPORTANTE:** Este é um **aplicativo web (SPA)** hospedado na Vercel, **NÃO** um app nativo com banco local.
 
 ```
-┌─────────────────┐     ┌──────────────┐     ┌──────────────┐
-│   UI (React)    │────▶│ Dexie (Local)│────▶│   Outbox     │
-└─────────────────┘     └──────────────┘     └──────┬───────┘
-                                                    │
-                                                    ▼ (quando online)
-                                              ┌──────────────┐
-                                              │   Supabase   │
-                                              └──────────────┘
+┌──────────────────────────────────────────────────────┐
+│              USUÁRIO FINAL                           │
+│     Abre navegador: https://seuerp.vercel.app        │
+│     (Gerente, Entregador, Atendente)                 │
+└────────────────────┬─────────────────────────────────┘
+                     │ HTTPS (Requer internet 100%)
+                     ▼
+┌──────────────────────────────────────────────────────┐
+│         VERCEL (Hospedagem Frontend)                 │
+│                                                      │
+│  - React build (HTML/CSS/JS estáticos)               │
+│  - CDN global (rápido)                               │
+│  - Deploy automático (git push)                      │
+│                                                      │
+└────────────────────┬─────────────────────────────────┘
+                     │ Conexão Direta (supabase-js)
+                     ▼
+┌──────────────────────────────────────────────────────┐
+│         SUPABASE (Backend/Servidor)                  │
+│                                                      │
+│  - PostgreSQL (40 tabelas)                           │
+│  - Fonte única da verdade                            │
+│  - Autenticação + RLS                                │
+│                                                      │
+└──────────────────────────────────────────────────────┘
 ```
 
-**Regras:**
-1. **TODA operação grava primeiro no Dexie (local)**
-2. Operações são enfileiradas na tabela `outbox_events`
-3. Quando online, o `syncService` processa a fila
-4. Se Supabase estiver offline, **a venda continua funcionando**
-5. Sincronização acontece **a cada operação** (não por tempo)
+**Regras Fundamentais:**
+1. **NUNCA armazenar dados no navegador** (sem LocalStorage, sem IndexedDB)
+2. **Toda operação vai DIRETO para o Supabase**
+3. Se a requisição falhar: **mostra erro e NÃO salva nada**
+4. Se a internet cair: **usuário vê "Sem Conexão" imediatamente**
+5. Dados só existem no Supabase - **zero risco de "sumir" depois**
+6. **Deploy:** `git push origin main` → Vercel atualiza site em ~2 minutos
+
+### 2.2 Tratamento de Erros de Rede
+
+```typescript
+// ✅ JEITO CORRETO (v3.0)
+try {
+  const { data, error } = await supabase.from('deposits').insert(deposit);
+  if (error) throw error;
+  // Sucesso: atualiza UI
+  return data;
+} catch (err) {
+  // Falhou: mostra erro ao usuário
+  showError('Sem conexão. Verifique sua internet e tente novamente.');
+  throw err; // NÃO salva nada localmente
+}
+```
 
 ---
 
@@ -505,26 +565,39 @@ interface Expense {
 - **NUNCA use `any`**
 - Campos em **camelCase** no frontend
 - Campos em **snake_case** no Supabase
-- Normalização via `dataSanitizer.ts`
+- Use os tipos de `src/types/supabase.ts`
 
 ### 12.2 Imports
 ```typescript
 // ✅ Use o alias @
-import { Product } from '@/domain/types';
+import { depositService } from '@/services';
+import type { Deposit } from '@/services';
 
 // ❌ Evite caminhos relativos longos
-import { Product } from '../../../src/domain/types';
+import { depositService } from '../../../src/services';
 ```
 
-### 12.3 Repositórios
-- Toda operação passa por `src/domain/repositories/`
-- Repositórios gravam no Dexie primeiro
-- **Nunca** chame Supabase diretamente de componentes
+### 12.3 Services (v3.0 - Online-Only)
+- **Toda operação passa por `src/services/`**
+- Services chamam **DIRETAMENTE** o Supabase
+- **Nunca** chame `supabase.from()` diretamente de componentes
+- **Nunca** armazene dados no navegador (LocalStorage, IndexedDB, etc.)
+
+```typescript
+// ✅ CORRETO (v3.0)
+import { depositService } from '@/services';
+const deposits = await depositService.getAll();
+
+// ❌ PROIBIDO
+const { data } = await supabase.from('deposits').select('*');
+localStorage.setItem('deposits', JSON.stringify(data)); // NUNCA FAZER ISSO
+```
 
 ---
 
 ## 13. CHECKLIST PARA NOVAS FUNCIONALIDADES
 
+### Regras de Negócio:
 - [ ] Usa apenas `BALCAO` ou `DELIVERY`?
 - [ ] `movement_type` correto (`SIMPLE`, `EXCHANGE`, `FULL`)?
 - [ ] Produto EXCHANGE tem `preco_troca` e `preco_completa` configurados?
@@ -533,8 +606,12 @@ import { Product } from '../../../src/domain/types';
 - [ ] Preços vêm de `product_pricing` ou dos campos específicos?
 - [ ] Taxa de entrega no campo `delivery_fee`?
 - [ ] IDs são UUID v4?
-- [ ] Grava primeiro no Dexie?
-- [ ] Erros tratados com try/catch?
+
+### Arquitetura (v3.0 - Online-Only):
+- [ ] **Usa Services** (nunca chama Supabase direto de componentes)?
+- [ ] **Trata erros de rede** com try/catch e feedback visual?
+- [ ] **NÃO armazena dados localmente** (zero LocalStorage/IndexedDB)?
+- [ ] **Mostra loading** enquanto aguarda resposta do servidor?
 - [ ] Sem `any` no TypeScript?
 
 ---
@@ -705,107 +782,287 @@ import { Product } from '../../../src/domain/types';
 
 ---
 
-## 17. ARQUIVOS PRINCIPAIS DO PROJETO
+## 17. HOSPEDAGEM E DEPLOYMENT
 
-### 17.1 Estrutura de Pastas
+### 17.1 Arquitetura de Hospedagem
+
+```
+┌─────────────────────────────────────────────────┐
+│  USUÁRIO (Entregador/Gerente)                  │
+└────────────────┬────────────────────────────────┘
+                 │ HTTPS
+                 ▼
+┌─────────────────────────────────────────────────┐
+│  VERCEL (Frontend)                              │
+│  - React build (HTML/CSS/JS)                    │
+│  - URL: seuerp.vercel.app                       │
+└────────────────┬────────────────────────────────┘
+                 │ API Calls
+                 ▼
+┌─────────────────────────────────────────────────┐
+│  SUPABASE (Backend)                             │
+│  - PostgreSQL (40 tabelas)                      │
+│  - Autenticação                                 │
+│  - RLS (Row Level Security)                     │
+└─────────────────────────────────────────────────┘
+```
+
+### 17.2 Deploy no Vercel
+
+**Configuração (.env.production):**
+```bash
+VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua-chave-publica-anon
+```
+
+**Comandos:**
+```bash
+# Build de produção
+npm run build
+
+# Deploy (automático via Git)
+git push origin main  # Vercel detecta e deploya
+```
+
+**Configurações Vercel:**
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+- **Install Command:** `npm install`
+- **Framework Preset:** Vite
+
+### 17.3 Configuração do Supabase
+
+1. **Allowed URLs (Authentication → URL Configuration):**
+   ```
+   https://seuerp.vercel.app
+   http://localhost:5173  # para dev local
+   ```
+
+2. **CORS Policy (API Settings):**
+   - Liberar domínio Vercel
+
+3. **Environment Variables (no Vercel Dashboard):**
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+
+---
+
+## 18. ARQUIVOS PRINCIPAIS DO PROJETO
+
+### 18.1 Estrutura de Pastas (v3.0 - Online-Only)
 
 ```
 src/
-├── domain/
-│   ├── db.ts                    # Definição Dexie (IndexedDB)
-│   ├── types.ts                 # Tipos TypeScript principais
-│   ├── repositories/            # Repositórios (CRUD local)
-│   │   ├── stock.repo.ts        # Estoque
-│   │   ├── os.repo.ts           # Ordens de Serviço
-│   │   └── ...
-│   └── sync/
-│       ├── outbox.ts            # Fila de sincronização
-│       ├── syncService.ts       # Serviço de sync
-│       ├── supabaseAppliers.ts  # Aplicadores por entidade
-│       └── utils/
-│           └── dataSanitizer.ts # Conversão PT↔EN
+├── types/
+│   └── supabase.ts              # Tipos das 40 tabelas (Database interface)
+├── services/
+│   ├── depositService.ts        # CRUD de depósitos
+│   ├── productService.ts        # CRUD de produtos + pricing
+│   ├── stockService.ts          # Estoque (direto no Supabase)
+│   ├── serviceOrderService.ts   # Vendas (transações atômicas)
+│   ├── clientService.ts         # CRUD de clientes
+│   ├── financialService.ts      # Caixa + contas a receber/pagar
+│   ├── deliveryService.ts       # Zonas + entregadores
+│   ├── index.ts                 # Barrel export
+│   └── README.md                # Documentação dos serviços
 ├── components/
 │   ├── NewServiceOrder.tsx      # Tela de Nova OS (PDV)
 │   ├── DepositsStockModule.tsx  # Gestão de Estoque
 │   └── ...
-└── contexts/
-    └── ShiftContext.tsx         # Contexto do turno atual
+├── contexts/
+│   └── ShiftContext.tsx         # Contexto do turno atual
+└── utils/
+    └── supabaseClient.ts        # Cliente Supabase (singleton)
 ```
 
-### 17.2 Arquivos Críticos
+**🗑️ REMOVIDOS (v3.0):**
+- ❌ `src/domain/db.ts` (Dexie/IndexedDB)
+- ❌ `src/domain/sync/` (toda pasta de sincronização)
+- ❌ `src/domain/repositories/` (repositórios locais)
+- ❌ `outbox_events` (tabela de fila)
+
+### 18.2 Arquivos Críticos (v3.0 - Online-Only)
 
 | Arquivo | Função |
 |---------|--------|
-| `src/domain/types.ts` | Tipos TypeScript (TipoAtendimento, MovimentoEstoque, etc) |
-| `src/domain/db.ts` | Schema Dexie (banco local) |
-| `src/domain/sync/supabaseAppliers.ts` | Funções de sync para Supabase |
-| `src/domain/sync/utils/dataSanitizer.ts` | Conversão PT↔EN |
-| `src/domain/repositories/stock.repo.ts` | CRUD de estoque + movementDelta |
+| `src/types/supabase.ts` | Tipos das 40 tabelas (Row, Insert, Update) |
+| `src/services/depositService.ts` | CRUD depósitos (direto no Supabase) |
+| `src/services/productService.ts` | CRUD produtos + pricing lógica |
+| `src/services/stockService.ts` | Estoque + movimentos (cálculo em tempo real) |
+| `src/services/serviceOrderService.ts` | Vendas atômicas (order + items + stock) |
+| `src/services/financialService.ts` | Caixa + contas a receber/pagar |
+| `src/services/deliveryService.ts` | Entregas + zonas + entregadores |
 | `components/NewServiceOrder.tsx` | PDV + modal TROCA/COMPLETA |
 | `components/DepositsStockModule.tsx` | Gestão de estoque + carga inicial |
 
+**🗑️ ARQUIVOS REMOVIDOS:**
+- ❌ `src/domain/db.ts` (Dexie)
+- ❌ `src/domain/sync/syncService.ts`
+- ❌ `src/domain/sync/outbox.ts`
+- ❌ `src/domain/repositories/*.repo.ts`
+
 ---
 
-## 18. STATUS ATUAL DO PROJETO (05/01/2026)
+## 19. STATUS ATUAL DO PROJETO (06/01/2026)
 
-### ✅ Funcionalidades Implementadas
+### 🎯 MIGRAÇÃO PARA v3.0 - ONLINE REAL-TIME
+
+**📅 Data:** 06/01/2026  
+**🔄 Status:** Arquitetura redefinida - Em processo de migração
+
+### ✅ Funcionalidades Mantidas (Regras de Negócio)
 
 1. **Sistema de Tipos de Atendimento** - BALCAO e DELIVERY apenas
 2. **Modal TROCA/COMPLETA** - Escolha de modalidade na venda
 3. **Preços por Modalidade** - `exchange_price` e `full_price` no produto
 4. **sale_movement_type** - Campo no item da OS para rastrear escolha
-5. **Carga Inicial de Estoque** - Diferencia de ajuste (tipo `CARGA_INICIAL`)
-6. **Sincronização Supabase** - Com conversão PT→EN automática
+5. **Cálculo de Estoque em Tempo Real** - SUM(quantity) direto no Supabase
+6. **Multi-depósito** - Preços e estoque por depósito
 
-### 🔧 Correções Recentes
+### 🔄 Mudanças Estruturais (v3.0)
 
-1. **movementDelta()** - Adicionado tratamento para `CARGA_INICIAL`
-2. **applyStockMovementUpsert()** - Mapeamento correto de tipos PT→EN
-3. **dataSanitizer.ts** - Adicionado mapeamento de `quantidade`, `motivo`, `tipo`
-4. **syncService.ts** - Adicionado sistema de priorização para sincronização (deposits primeiro!)
+**REMOVIDO:**
+- ❌ Dexie.js (IndexedDB)
+- ❌ `src/domain/sync/` (sincronização)
+- ❌ `src/domain/repositories/` (repositórios locais)
+- ❌ `outbox_events` (fila de sincronização)
+- ❌ Offline-first (cache local)
 
-### ⚠️ Pendências/Próximos Passos
+**ADICIONADO:**
+- ✅ Conexão direta Supabase via Services
+- ✅ Tratamento de erros de rede (feedback imediato)
+- ✅ Arquitetura simplificada (Client-Server)
+- ✅ Documentação de deploy Vercel + Supabase
 
-1. Executar migração SQL no Supabase (`2025_01_05_safe_migration.sql`)
-2. ~~Testar carga inicial de estoque após correções~~ → **Detectado erro de ordem de sincronização**
-3. Executar scripts de correção:
-   - `scripts/check-and-sync-deposits.ts` - Verificar se depósitos estão no Supabase
-   - `scripts/fix-sync-order.ts` - Reprocessar eventos com erro
+### ⚠️ Próximos Passos (Migração v2.1 → v3.0)
 
-### 🐛 Problemas Conhecidos
+1. **Remover dependências antigas:**
+   ```bash
+   npm uninstall dexie dexie-react-hooks
+   ```
 
-1. **Erro de FK em stock_movements:** O sistema tentou sincronizar movimentos de estoque ANTES dos depósitos
-   - **Causa:** Ordem de sincronização não respeitava dependências
-   - **Solução:** Implementado sistema de priorização no `syncService.ts`
-   - **Correção:** Executar `fix-sync-order.ts` para reprocessar eventos
+2. **Atualizar Services** (já criados em v3.0):
+   - Verificar que todos chamam Supabase direto
+   - Remover qualquer referência a Dexie
+
+3. **Migrar Componentes:**
+   - Substituir chamadas a repositórios locais por Services
+   - Adicionar tratamento de erros de rede
+   - Remover lógica de sincronização
+
+4. **Remover Tabela `outbox_events` do Supabase:**
+   ```sql
+   DROP TABLE IF EXISTS outbox_events CASCADE;
+   ```
+
+5. **Configurar Deploy:**
+   - Criar projeto no Vercel
+   - Configurar variáveis de ambiente
+   - Testar build de produção
 
 ---
 
-## 19. COMO CONTINUAR O DESENVOLVIMENTO
+## 20. COMO CONTINUAR O DESENVOLVIMENTO (v3.0)
 
-### 19.1 Antes de Qualquer Alteração
+### 20.1 Antes de Qualquer Alteração
 
 1. **Leia este documento** completamente
-2. **Verifique os tipos** em `src/domain/types.ts`
-3. **Entenda a arquitetura offline-first** (Dexie → Outbox → Supabase)
+2. **Verifique os tipos** em `src/types/supabase.ts`
+3. **Entenda a arquitetura Online-Only** (React → Services → Supabase direto)
+4. **NUNCA armazene dados no navegador** (zero LocalStorage/IndexedDB)
 
-### 19.2 Para Adicionar Nova Funcionalidade
+### 20.2 Para Adicionar Nova Funcionalidade
 
-1. Definir tipos em `src/domain/types.ts`
-2. Adicionar tabela em `src/domain/db.ts` (Dexie)
-3. Criar repositório em `src/domain/repositories/`
-4. Adicionar applier em `src/domain/sync/supabaseAppliers.ts`
-5. Adicionar mapeamento em `src/domain/sync/utils/dataSanitizer.ts`
-6. Criar migração SQL em `supabase/migrations/`
+1. **Definir tipos** em `src/types/supabase.ts` (tabela no Database interface)
+2. **Criar/Atualizar Service** em `src/services/`:
+   ```typescript
+   // Exemplo: userService.ts
+   export const userService = {
+     async getAll() {
+       const { data, error } = await supabase.from('users').select('*');
+       if (error) throw error;
+       return data;
+     },
+     // ... outros métodos
+   };
+   ```
+3. **Criar migração SQL** em `supabase/migrations/`
+4. **Atualizar componente** para usar o Service:
+   ```typescript
+   import { userService } from '@/services';
+   
+   try {
+     const users = await userService.getAll();
+     setUsers(users);
+   } catch (err) {
+     showError('Erro ao carregar usuários');
+   }
+   ```
 
-### 19.3 Para Debugar Sincronização
+### 20.3 Para Debugar Erros de Conexão
 
 ```typescript
-// Ver eventos pendentes no console
-const events = await db.outbox_events.where('status').equals('PENDING').toArray();
-console.log('Eventos pendentes:', events);
+// Verificar status da conexão Supabase
+const { data, error } = await supabase.from('deposits').select('count');
+if (error) {
+  console.error('Supabase offline:', error.message);
+  alert('Sem conexão com o servidor. Verifique sua internet.');
+}
+```
+
+### 20.4 Boas Práticas (v3.0)
+
+**✅ FAZER:**
+- Usar Services para toda operação de dados
+- Tratar erros com try/catch
+- Mostrar loading enquanto aguarda resposta
+- Dar feedback claro ao usuário (sucesso/erro)
+- Validar dados ANTES de enviar ao servidor
+
+**❌ NÃO FAZER:**
+- Chamar `supabase.from()` direto de componentes
+- Armazenar dados em LocalStorage/IndexedDB
+- Assumir que a requisição sempre vai funcionar
+- Esconder erros de conexão do usuário
+
+---
+
+## 21. DIFERENÇAS: v2.1 (Offline) vs v3.0 (Online)
+
+| Aspecto | v2.1 (Offline-First) | v3.0 (Online-Only) |
+|---------|----------------------|--------------------|
+| **Banco Local** | Dexie (IndexedDB) | ❌ Nenhum |
+| **Sincronização** | Outbox + syncService | ❌ Não existe |
+| **Quando salva** | 1. Dexie → 2. Fila → 3. Supabase (depois) | Supabase (imediato) |
+| **Sem internet** | Funciona (salva local) | ❌ Mostra erro |
+| **Risco de perda** | Alto (dados presos no cache) | Zero (ou salva ou não) |
+| **Complexidade** | Extrema | Mínima |
+| **Código** | 3 camadas (UI → Repo → Sync → Supabase) | 2 camadas (UI → Service → Supabase) |
+| **Hospedagem** | Google IDX (dev) | Vercel (produção) |
+
+### 21.1 Exemplo de Código: Criar Depósito
+
+**v2.1 (Offline):**
+```typescript
+// ❌ Complexo (3 etapas)
+1. await db.deposits.add(deposit);      // Grava no Dexie
+2. await db.outbox_events.add({...});   // Enfileira
+3. await syncService.processQueue();     // Sincroniza (se online)
+```
+
+**v3.0 (Online):**
+```typescript
+// ✅ Simples (1 etapa)
+try {
+  const deposit = await depositService.create({ name: 'Filial Centro' });
+  showSuccess('Depósito criado!');
+} catch (err) {
+  showError('Erro de conexão. Tente novamente.');
+}
 ```
 
 ---
 
-**Última atualização:** 05/01/2026
+**Versão:** 3.0 - ONLINE REAL-TIME  
+**Última atualização:** 06/01/2026  
+**Mudança Crítica:** Migrado de Offline-First (v2.1) para Online-Only (v3.0)

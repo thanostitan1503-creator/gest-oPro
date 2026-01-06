@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { db, generateId } from '@/domain/db';
+import { generateId } from '@/utils/idGenerator';
 import { enqueueOutboxEvent } from '@/domain/sync/outbox';
 import { FinancialSettings } from '../types';
 
@@ -136,3 +136,6 @@ export function GoalConfigModal({ isOpen, onClose, defaultGoal }: GoalConfigModa
     </div>
   );
 }
+
+
+

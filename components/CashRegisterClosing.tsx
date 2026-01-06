@@ -339,3 +339,6 @@ export const CashRegisterClosing: React.FC<CashRegisterClosingProps> = ({ onClos
     </div>
   );
 };
+
+
+

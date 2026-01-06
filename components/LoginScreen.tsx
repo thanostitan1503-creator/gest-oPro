@@ -6,7 +6,7 @@ import { upsertDeposit } from '@/domain/repositories/deposits.repo';
 import { Colaborador, Deposito } from '@/domain/types';
 import { DASHBOARD_ITEMS } from '../constants';
 import { supabase } from '@/domain/supabaseClient';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 
 interface LoginScreenProps {
   onLoginSuccess: (user: Colaborador) => void;
@@ -374,3 +374,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     </div>
   );
 };
+
+
+

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { db, generateId } from '@/domain/db';
+import { generateId } from '@/utils/idGenerator';
 import { enqueueOutboxEvent } from '@/domain/sync/outbox';
 import { Expense } from '../types';
 
@@ -162,3 +162,6 @@ export function NewExpenseModal({ isOpen, onClose }: NewExpenseModalProps) {
     </div>
   );
 }
+
+
+

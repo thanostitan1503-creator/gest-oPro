@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { Trash2 } from 'lucide-react';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 
 export interface OrderItem {
   id: string;
@@ -259,3 +259,6 @@ export function ServiceOrderItems({
     </div>
   );
 }
+
+
+

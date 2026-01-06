@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bike, Zap, Store, Monitor, Crown, Heart, Package } from 'lucide-react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { supabase } from '@/domain/supabaseClient';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import type { AuditDashboardStats } from '../../types/audit';
 
 const formatCurrency = (value: number) =>
@@ -263,3 +263,6 @@ export const GlobalStatsDashboard: React.FC = () => {
     </div>
   );
 };
+
+
+

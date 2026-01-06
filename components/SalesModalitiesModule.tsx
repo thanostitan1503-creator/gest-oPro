@@ -354,3 +354,5 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
     </div>
   );
 };
+
+

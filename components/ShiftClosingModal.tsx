@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckSquare, ClipboardCheck, Save, X } from 'lucide-react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { useShift } from '@/contexts/ShiftContext';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { getStockMapForDeposit } from '@/domain/repositories/stock.repo';
 import { saveShiftStockAudits } from '@/domain/repositories/shift.repo';
 import type { Produto, ShiftStockAudit } from '@/domain/types';
@@ -317,3 +317,6 @@ export const ShiftClosingModal: React.FC<ShiftClosingModalProps> = ({ onClose })
     </div>
   );
 };
+
+
+

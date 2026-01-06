@@ -25,8 +25,8 @@ import {
 import { NewExpenseModal } from '@/components/NewExpenseModal';
 import { NewReceivableModal } from '@/components/NewReceivableModal';
 import { GoalConfigModal } from '@/components/GoalConfigModal';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { addReceivablePayment, deleteReceivable, updateReceivable, createReceivable, updateReceivablePayment } from '@/domain/repositories/receivables.repo';
 import { registerCashFlow } from '@/domain/repositories/cashflow.repo';
 import { BoletoManagerModal } from '@/components/Financeiro/BoletoManagerModal';
@@ -1682,4 +1682,7 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     </div>
   );
 };
+
+
+
 

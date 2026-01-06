@@ -34,7 +34,7 @@ import {
   setThemeBackgroundOpacity,
 } from '@/domain/storage';
 import { supabase } from '@/domain/supabaseClient';
-import { startSyncService, stopSyncService, syncNow } from '@/domain/sync/syncService';
+import { Toaster } from 'sonner';
 import { ShiftProvider, useShift } from '@/contexts/ShiftContext';
 
 const ShiftGate: React.FC<{ currentUser: Colaborador; children: React.ReactNode }> = ({ currentUser, children }) => {
@@ -111,19 +111,6 @@ const App: React.FC = () => {
       setIsStorageReady(true);
     };
     startSystem();
-  }, []);
-
-  // Offline-first sync (Outbox → Supabase)
-  useEffect(() => {
-    startSyncService();
-    return () => stopSyncService();
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void syncNow({ log: true });
-    }, 1000);
-    return () => clearTimeout(timer);
   }, []);
 
   // Teste técnico (DEV): valida conexão/tabela/RLS no console sem mexer na UI
@@ -404,6 +391,7 @@ const App: React.FC = () => {
           <GasRobot />
         </div>
       </ShiftGate>
+      <Toaster richColors closeButton position="top-right" />
     </ShiftProvider>
   );
 };

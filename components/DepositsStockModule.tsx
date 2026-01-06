@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import {
   X, Save, Plus, Trash2, Edit2, Warehouse, Package, ArrowLeftRight,
   ClipboardCheck, AlertTriangle, Users, ShoppingCart, Check, RefreshCw,
   Search, ChevronRight, MapPin, Hash, Palette, Loader2, Settings, Database,
   Box, Repeat, ShoppingBag, Tag
 } from 'lucide-react';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { Deposit, Colaborador, MovimentoEstoque, Product, StockMovementRule } from '@/domain/types';
 import { upsertDeposit, deleteDeposit, listDeposits } from '@/domain/repositories/deposits.repo';
 import { applyMovement } from '@/domain/repositories/stock.repo';
@@ -2425,3 +2425,6 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
 };
 
 export default DepositsStockModule;
+
+
+

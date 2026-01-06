@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { 
   X, Users, UserPlus, Search, 
   MapPin, Truck, Shield, BadgeCheck,
@@ -25,9 +25,6 @@ interface DriverStats {
   rating: number; // 1-5
   recentOs: { id: string; time: string; address: string; status: 'DONE' | 'LATE' }[];
 }
-
-// Helper seguro para gerar IDs
-const generateId = () => `COL-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
 export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ onClose }) => {
    // -- Data State (Reactive via useLiveQuery) --
@@ -697,3 +694,6 @@ export const EmployeesModule: React.FC<EmployeesModuleProps> = ({ onClose }) => 
     </div>
   );
 };
+
+
+

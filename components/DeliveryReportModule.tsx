@@ -11,10 +11,10 @@ import { EditControl } from 'react-leaflet-draw';
 import { 
   X, Truck, Map as MapIcon, Flame, Activity, MapPin, Plus, Trash2, Search
 } from 'lucide-react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { getOrders, getDriverLocations } from '@/domain/storage';
 import { OrdemServico, DriverLocation } from '@/domain/types';
-import { db } from '@/domain/db';
+// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { 
   upsertDeliveryZone,
   deleteDeliveryZone,
@@ -1299,3 +1299,6 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
     </div>
   );
 };
+
+
+

@@ -3,7 +3,7 @@ import type { FC } from 'react';
 import { X, Plus, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { Produto, StockMovementRule, TipoProduto, ProductPricing } from '@/domain/types';
 import { bulkUpsertPricing, getPricingByProduct, listExchangeRulesByProduct, getBalance } from '@/domain/repositories/index';
-import { generateId, db } from '@/domain/db';
+import { generateId } from '@/utils/idGenerator';
 
 interface DepositPricing {
   depositoId: string;
@@ -706,3 +706,6 @@ const NewProductModal: FC<Props> = ({ isOpen, onClose, deposits, products, initi
 };
 
 export default NewProductModal;
+
+
+

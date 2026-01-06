@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { X } from 'lucide-react';
-import { db, generateId } from '@/domain/db';
+import { generateId } from '@/utils/idGenerator';
 import { getEmployees } from '@/domain/storage';
 import { enqueueOutboxEvent } from '@/domain/sync/outbox';
 // IMPORTANTE: Importando o componente que acabamos de criar
@@ -398,3 +398,5 @@ const NewServiceOrderModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
 };
 
 export default NewServiceOrderModal;
+
+
