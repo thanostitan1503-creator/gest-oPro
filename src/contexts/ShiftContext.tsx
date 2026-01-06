@@ -44,7 +44,17 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
     
     if (error) console.error('Erro ao buscar turno:', error);
     setActiveShift(data as WorkShift | null);
-    se
+    setLoading(false);
+  }, [currentUser?.id, currentUser?.depositoId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const openShift = useCallback(
+    async (params: { openingBalance: number; notes?: string | null }) => {
+      if (!currentUser?.id || !currentUser?.depositoId) return null;
+      
       // ✅ v3.0: Abrir turno direto no Supabase
       const newShift: Omit<WorkShift, 'id'> = {
         user_id: currentUser.id,
@@ -67,14 +77,21 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
         return null;
       }
       
-      const shift = data as WorkShift
-  const openShift = useCallback(
-    async (params: { openingBalance: number; notes?: string | null }) => {
-      if (!currentUser?.id || !currentUser?.depositoId) return null;
-      const shift = await openShiftRepo({
-        userId: currentUser.id,
-        userName: currentUser.nome,
-        depositId: currentUser.depositoId,
+      const shift = data as WorkShift;
+      setActiveShift(shift);
+      return shift;
+    },
+    [currentUser?.id, currentUser?.depositoId, currentUser?.nome]
+  );
+
+  const closeShift = useCallback(
+    async (params: {
+      declared: { cash: number; card: number; pix: number };
+      system: { cash: number; card: number; pix: number };
+      status: WorkShift['status'];
+      notes?: string | null;
+    }) => {
+      if (!activeShift) return null;
       
       // ✅ v3.0: Fechar turno direto no Supabase
       const { data, error } = await supabase
@@ -101,24 +118,7 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
       }
       
       setActiveShift(null);
-      return data as WorkShift
-  const closeShift = useCallback(
-    async (params: {
-      declared: { cash: number; card: number; pix: number };
-      system: { cash: number; card: number; pix: number };
-      status: WorkShift['status'];
-      notes?: string | null;
-    }) => {
-      if (!activeShift) return null;
-      const updated = await closeShiftRepo({
-        shift: activeShift,
-        status: params.status,
-        declared: params.declared,
-        system: params.system,
-        notes: params.notes ?? null,
-      });
-      setActiveShift(null);
-      return updated;
+      return data as WorkShift;
     },
     [activeShift]
   );
