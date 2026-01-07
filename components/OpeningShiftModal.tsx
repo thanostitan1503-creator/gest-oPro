@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardCheck, Factory, AlertTriangle, Save } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { useShift } from '@/contexts/ShiftContext';
 import { useLiveQuery, db } from '@/utils/legacyHelpers';
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+import { productService, stockService } from '@/services';
+import { toast } from 'sonner';
 import type { Colaborador, Produto } from '@/domain/types';
 
 type OpeningShiftModalProps = {
@@ -53,16 +51,26 @@ export const OpeningShiftModal: React.FC<OpeningShiftModalProps> = ({ user }) =>
     let alive = true;
     const load = async () => {
       if (!selectedDepositId) return; // ⚠️ FIXADO: Usar selectedDepositId
-      const loadedProducts = await listProducts();
-      const scoped = loadedProducts.filter((p) => {
-        if (isServiceProduct(p)) return false;
-        const dep = resolveProductDepositId(p);
-        return dep === null || dep === selectedDepositId;
-      });
-      const map = await getStockMapForDeposit(selectedDepositId);
-      if (!alive) return;
-      setProducts(scoped);
-      setStockMap(map);
+      try {
+        const loadedProducts = await productService.getAll();
+        const scoped = loadedProducts.filter((p) => {
+          // p.track_stock === false ou type === 'SERVICE' não entram na auditoria
+          if ((p as any).track_stock === false || (p as any).type === 'SERVICE') return false;
+          const dep = resolveProductDepositId(p as any);
+          return dep === null || dep === selectedDepositId;
+        }) as unknown as Produto[];
+
+        const balances = await stockService.getBalancesByDeposit(selectedDepositId);
+        const map: Record<string, number> = {};
+        balances.forEach((v, k) => { map[k] = v; });
+
+        if (!alive) return;
+        setProducts(scoped);
+        setStockMap(map);
+      } catch (err) {
+        console.error('Erro ao carregar produtos/estoque', err);
+        toast.error('Erro ao carregar produtos ou estoque para auditoria');
+      }
     };
     void load();
     return () => {

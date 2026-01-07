@@ -15,8 +15,9 @@ import { NewClientModal } from './NewClientModal';
 import { ServiceOrderItems } from './ServiceOrderItems';
 import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '@/domain/types';
 import { PaymentMethod } from '@/types';
-import { listProducts, getOrders } from '@/utils/legacyHelpers';
+import { getOrders } from '@/utils/legacyHelpers';
 import { supabase } from '@/utils/supabaseClient';
+import { productService, depositService, employeeService } from '@/services';
 
 // Stub para db e useLiveQuery
 const db: any = {
@@ -470,12 +471,14 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   const [products, setProducts] = useState<Produto[]>([]);
   const [paymentMethodsDB, setPaymentMethodsDB] = useState<PaymentMethod[]>([]);
   const [dbClients, setDbClients] = useState<Cliente[]>([]);
+  const [availableDeposits, setAvailableDeposits] = useState<Deposito[]>([]);
+  const [availableDrivers, setAvailableDrivers] = useState<Colaborador[]>([]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       const [prodsRaw, methods, clients] = await Promise.all([
-        listProducts().catch(() => []),
+        productService.getAll().catch(() => []),
         db.payment_methods.filter((p) => p.is_active === true).toArray(),
         listClients(),
       ]);
@@ -570,39 +573,64 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     };
   }, []);
 
-  // Live queries for deposits and drivers to populate selects
-  const availableDrivers = useLiveQuery(
-    async () => {
-      const dbEmployees = await db.employees.filter((e: any) => (e.is_active ?? e.ativo) !== false).toArray();
-      const storageEmployees = (getEmployees() || []).filter((e: any) => (e?.ativo ?? e?.is_active) !== false);
-      const seen = new Set<string>();
-      const active = [...dbEmployees, ...storageEmployees].filter((e: any) => {
-        if (!e?.id || seen.has(e.id)) return false;
-        seen.add(e.id);
-        return true;
-      });
-      const drivers = active.filter((e: any) => {
-        if (!e?.cargo) return false;
-        const cargo = String(e.cargo ?? '').toUpperCase().trim();
-        return cargo.includes('ENTREG') || cargo.includes('MOTOR');
-      });
-      return drivers;
-    },
-    []
-  ) || [];
-
+  // Carrega depósitos e entregadores via serviços
   useEffect(() => {
-    try {
-      console.log('Available drivers (main form):', availableDrivers.map((d: any) => ({ id: d.id, nome: d.nome ?? d.username, cargo: d.cargo, ativo: d.ativo ?? d.is_active })));
-    } catch (err) {
-      // ignore
-    }
-  }, [availableDrivers]);
+    let mounted = true;
+    (async () => {
+      try {
+        const [depsRaw, empsRaw] = await Promise.all([
+          depositService.getAll().catch(() => []),
+          employeeService.getAll().catch(() => []),
+        ]);
 
-  // Also log with Portuguese label as requested
-  try { console.log('Entregadores encontrados:', availableDrivers); } catch (e) { /* ignore */ }
+        if (!mounted) return;
 
-  const availableDeposits = useLiveQuery(() => db.deposits.filter((d: any) => (d.is_active ?? d.ativo) !== false).toArray(), []) || [];
+        const deps = (depsRaw || []).map((d: any) => ({
+          id: d.id,
+          nome: d.name,
+          ativo: d.active,
+          endereco: d.address,
+          cor: d.color,
+        } as Deposito)).filter((d) => currentUser?.depositoId ? d.id === currentUser.depositoId : d.ativo !== false);
+
+        const emps = (empsRaw || []).map((e: any) => ({
+          id: e.id,
+          nome: e.name,
+          cargo: e.role,
+          depositoId: e.deposit_id,
+          ativo: e.active,
+          username: e.username,
+          permissoes: e.permissions || [],
+        } as Colaborador));
+
+        const drivers = emps.filter((e) => {
+          const cargo = String(e.cargo ?? '').toUpperCase();
+          const isDriver = cargo.includes('ENTREG') || cargo.includes('MOTOR');
+          if (!isDriver) return false;
+          if (currentUser?.depositoId) {
+            return e.depositoId === currentUser.depositoId || e.depositoId === null;
+          }
+          return true;
+        });
+
+        setAvailableDeposits(deps);
+        setAvailableDrivers(drivers);
+      } catch (err) {
+        console.error('Erro ao carregar depósitos/entregadores', err);
+        if (mounted) {
+          setAvailableDeposits([]);
+          setAvailableDrivers([]);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentUser?.depositoId]);
+
+  // Live queries for deposits and drivers to populate selects
+  // availableDrivers e availableDeposits carregados via services (ver useEffect acima)
   const deliveryZones = useLiveQuery(() => db.delivery_zones?.toArray(), []) || [];
   const deliverySectors = useLiveQuery(() => db.delivery_zones?.toArray(), []) || [];
   const zonePricing = useLiveQuery(() => db.zone_pricing?.toArray(), []) || [];
@@ -614,15 +642,6 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     return map;
   }, [deliveryZones]);
 
-  useEffect(() => {
-    if ((!depositId || depositId === '') && availableDeposits.length === 1) {
-      setDepositId(availableDeposits[0].id);
-    }
-    if ((!employeeId || employeeId === '') && availableDrivers.length === 1) {
-      setEmployeeId(availableDrivers[0].id);
-    }
-  }, [availableDeposits, availableDrivers]);
-  
   // -- Form Header State --
   const [serviceType, setServiceType] = useState<'BALCAO' | 'DELIVERY'>('DELIVERY');
   const [observations, setObservations] = useState('');
@@ -661,6 +680,16 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   const [selectedPaymentForEdit, setSelectedPaymentForEdit] = useState<PaymentItem | null>(null);
   const [editingPaymentMethod, setEditingPaymentMethod] = useState<string>('');
   const [editingPaymentValue, setEditingPaymentValue] = useState<string>('');
+
+  // Seleção automática de depósito/entregador quando há único disponível ou usuário amarrado a depósito
+  useEffect(() => {
+    if ((!depositId || depositId === '') && availableDeposits.length === 1) {
+      setDepositId(availableDeposits[0].id);
+    }
+    if ((!employeeId || employeeId === '') && availableDrivers.length === 1) {
+      setEmployeeId(availableDrivers[0].id);
+    }
+  }, [availableDeposits, availableDrivers, depositId, employeeId]);
 
   const pricingByZoneId = useMemo(() => {
     const map = new Map<string, any>();
@@ -2125,6 +2154,8 @@ export const NewServiceOrder: React.FC<NewServiceOrderProps> = ({ onClose, curre
   const [products, setProducts] = useState<Produto[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [employees, setEmployees] = useState<Colaborador[]>([]);
+  const [availableDeposits, setAvailableDeposits] = useState<any[]>([]);
+  const [availableDrivers, setAvailableDrivers] = useState<Colaborador[]>([]);
   const [editingOrder, setEditingOrder] = useState<OrdemServico | null>(null);
   const [timelineOrder, setTimelineOrder] = useState<OrdemServico | null>(null);
   const handleCancel = () => {
@@ -2153,29 +2184,61 @@ export const NewServiceOrder: React.FC<NewServiceOrderProps> = ({ onClose, curre
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [ords, prods, methods, emps] = await Promise.all([
+      const [ords, prodsRaw, methods, empsRaw, depsRaw] = await Promise.all([
         listServiceOrders(),
-        listProducts(),
+        productService.getAll().catch(() => []),
         listPaymentMethods(),
-        listEmployees(),
+        employeeService.getAll().catch(() => []),
+        depositService.getAll().catch(() => []),
       ]);
       if (!alive) return;
+
+      // Map products (service row -> Produto)
+      const prods = (prodsRaw || []).map(mapProductRowToProduto);
+
+      // Map employees (service row -> Colaborador)
+      const emps = (empsRaw || []).map((e: any) => ({
+        id: e.id,
+        nome: e.name,
+        cargo: e.role,
+        depositoId: e.deposit_id,
+        ativo: e.active,
+        username: e.username,
+        permissoes: e.permissions || [],
+      } as Colaborador));
+
+      // Filter deposits: if user tem depositoId, restringe
+      const deps = (depsRaw || []).map((d: any) => ({
+        id: d.id,
+        nome: d.name,
+        ativo: d.active,
+        endereco: d.address,
+        cor: d.color,
+      })).filter((d: any) => currentUser?.depositoId ? d.id === currentUser.depositoId : (d.ativo !== false));
+
+      // Drivers: entregador ou motorista (role ENTREGADOR ou nome contém ENTREG)
+      const drivers = emps.filter((e) => {
+        const cargo = String(e.cargo ?? '').toUpperCase();
+        const isDriver = cargo.includes('ENTREG') || cargo.includes('MOTOR');
+        if (!isDriver) return false;
+        if (currentUser?.depositoId) {
+          return e.depositoId === currentUser.depositoId || e.depositoId === null;
+        }
+        return true;
+      });
+
       setOrders(ords);
       setProducts(prods);
       setPaymentMethods(methods);
-      const storageEmployees = (getEmployees() || []) as Colaborador[];
-      const seen = new Set<string>();
-      const merged = [...emps, ...storageEmployees].filter((e) => {
-        if (!e?.id || seen.has(e.id)) return false;
-        seen.add(e.id);
-        return true;
-      });
-      setEmployees(merged);
+      setEmployees(emps);
+      setAvailableDeposits(deps);
+      setAvailableDrivers(drivers);
+
     })();
     return () => {
       alive = false;
     };
-  }, [view]);
+  }, [view, currentUser?.depositoId, currentUser?.id]);
 
   // -- Filters --
   const filteredOrders = useMemo(() => {

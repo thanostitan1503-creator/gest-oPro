@@ -4,10 +4,8 @@ import axios from 'axios';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
-import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import { MapContainer, TileLayer, FeatureGroup, Polygon, Tooltip as RLTooltip, useMap, Pane } from 'react-leaflet';
-import { EditControl } from 'react-leaflet-draw';
 import { 
   X, Truck, Map as MapIcon, Flame, Activity, MapPin, Plus, Trash2, Search
 } from 'lucide-react';
@@ -288,6 +286,8 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
   const deliveryMarkersRef = useRef<any[]>([]);
   const refreshMapRef = useRef<() => void>(() => {});
   const drawnLayerRef = useRef<any>(null);
+  const [drawReady, setDrawReady] = useState(false);
+  const [EditControlComp, setEditControlComp] = useState<React.ComponentType<any> | null>(null);
 
   const pricingByDeposit = useMemo(() => {
     const map = new Map<string, Map<string, number>>();
@@ -308,7 +308,29 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
   }, []);
 
   useEffect(() => {
-    ensureDrawReadableAreaPatch();
+    let mounted = true;
+    (async () => {
+      try {
+        await import('leaflet-draw');
+        const hasDraw = !!(L as any)?.Draw?.Event;
+        if (!mounted) return;
+        if (hasDraw) {
+          const mod = await import('react-leaflet-draw');
+          setEditControlComp(() => mod.EditControl);
+          setDrawReady(true);
+          ensureDrawReadableAreaPatch();
+        } else {
+          console.warn('leaflet-draw não expôs L.Draw.Event (report)');
+          setDrawReady(false);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar ferramentas de desenho (report)', err);
+        if (mounted) setDrawReady(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleSaveZone = useCallback(async () => {
@@ -563,7 +585,13 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
   // 2. Data Polling
   useEffect(() => {
     const fetchDrivers = () => {
-      setDrivers(getDriverLocations());
+      try {
+        const data = getDriverLocations();
+        setDrivers(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Erro ao carregar entregadores', err);
+        setDrivers([]);
+      }
     };
     fetchDrivers();
     const interval = setInterval(fetchDrivers, 5000); // 5s refresh
@@ -571,12 +599,24 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
   }, []);
 
   useEffect(() => {
-    if (liveOrders === undefined) return;
-    if (liveOrders.length > 0) {
-      setDeliveries(liveOrders);
-      return;
-    }
-    setDeliveries(getOrders());
+    let alive = true;
+    const load = async () => {
+      try {
+        if (liveOrders && Array.isArray(liveOrders) && liveOrders.length > 0) {
+          if (alive) setDeliveries(liveOrders);
+          return;
+        }
+        const fetched = await getOrders();
+        if (alive) setDeliveries(Array.isArray(fetched) ? fetched : []);
+      } catch (err) {
+        console.error('Erro ao carregar entregas', err);
+        if (alive) setDeliveries([]);
+      }
+    };
+    void load();
+    return () => {
+      alive = false;
+    };
   }, [liveOrders]);
 
   // Depósito padrão
@@ -668,7 +708,8 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
     deliveryMarkersRef.current = [];
 
     if (viewMode === 'heatmap') {
-      const points = deliveries
+      const list = Array.isArray(deliveries) ? deliveries : [];
+      const points = list
         .filter(d => d.latitude && d.longitude)
         .map(d => [d.latitude, d.longitude, 0.8]);
 
@@ -682,7 +723,8 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
     }
 
     if (viewMode === 'realtime') {
-      drivers.forEach(d => {
+      const listDrivers = Array.isArray(drivers) ? drivers : [];
+      listDrivers.forEach(d => {
         const iconHtml = `
           <div style="background-color:#ef4444; width:32px; height:32px; border-radius:50%; border:2px solid white; box-shadow:0 0 10px rgba(239,68,68,0.5); display:flex; align-items:center; justify-content:center; color:white;">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
@@ -1251,8 +1293,9 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
             </Pane>
 
             {/* Desenho/edição da zona atual */}
+            {drawReady && EditControlComp && (
             <FeatureGroup ref={drawnLayerRef as any}>
-              <EditControl
+              <EditControlComp
                 position="topright"
                 onCreated={(e) => {
                   const layer: any = e.layer;
@@ -1293,6 +1336,7 @@ export const DeliveryReportModule: React.FC<DeliveryReportModuleProps> = ({ onCl
                 }}
               />
             </FeatureGroup>
+            )}
           </MapContainer>
 
           <div className="absolute bottom-6 right-6 bg-white/90 backdrop-blur px-4 py-3 rounded-xl border border-bdr shadow-xl text-xs font-medium text-txt-muted max-w-xs text-right z-[1000] pointer-events-none">

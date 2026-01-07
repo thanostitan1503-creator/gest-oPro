@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Deposit, Colaborador, MovimentoEstoque, Product, StockMovementRule } from '@/domain/types';
 import {
-  upsertDeposit, deleteDeposit, listDeposits, listProducts, applyMovement,
+  upsertDeposit, deleteDeposit, listDeposits, applyMovement,
   useLiveQuery, db,
 } from '@/utils/legacyHelpers';
 import { employeeService } from '@/services';
@@ -535,6 +535,16 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     
     if (productInUse) {
       alert('Este produto não pode ser excluído pois está sendo usado em Ordens de Serviço.');
+      setDeleteProductModal(null);
+      return;
+    }
+
+    // Verificar se há movimentações de estoque vinculadas
+    const movementsCount = await db.stock_movements?.where('product_id')
+      .equals(deleteProductModal.id)
+      .count?.();
+    if (movementsCount && movementsCount > 0) {
+      alert('Este produto não pode ser excluído: existem movimentações de estoque vinculadas.');
       setDeleteProductModal(null);
       return;
     }

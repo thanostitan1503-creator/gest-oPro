@@ -49,7 +49,10 @@ const ShiftGate: React.FC<{ currentUser: Colaborador; children: React.ReactNode 
   );
 };
 
-const App: React.FC = () => {
+import { SettingsProvider, useSettings } from '@/contexts/SettingsContext';
+
+const AppContent: React.FC = () => {
+  const { showGasRobot } = useSettings();
   // -- Auth State --
   const [currentUser, setCurrentUser] = useState<Colaborador | null>(null);
 
@@ -254,7 +257,6 @@ const App: React.FC = () => {
       default: return null;
     }
   };
-
   return (
     <ShiftProvider currentUser={currentUser}>
       <ShiftGate currentUser={currentUser}>
@@ -352,11 +354,19 @@ const App: React.FC = () => {
       </footer>
 
       {renderModule()}
-          <GasRobot />
+      {showGasRobot && <GasRobot />}
         </div>
       </ShiftGate>
       <Toaster richColors closeButton position="top-right" />
     </ShiftProvider>
+  );
+}
+
+const App: React.FC = () => {
+  return (
+    <SettingsProvider>
+      <AppContent />
+    </SettingsProvider>
   );
 };
 

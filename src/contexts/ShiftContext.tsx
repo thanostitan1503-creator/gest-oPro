@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import type { Colaborador, WorkShift } from '@/domain/types';
+import type { Colaborador, WorkShift, WorkShiftStatus } from '@/domain/types';
 import { supabase } from '@/domain/supabaseClient';
+import type { Database } from '@/types/supabase';
 // ⚠️ REMOVIDO v3.0: import { closeShift as closeShiftRepo, getOpenShiftForUser, openShift as openShiftRepo } from '@/domain/repositories/shift.repo';
 
 type ShiftContextValue = {
@@ -33,7 +34,6 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
     }
     setLoading(true);
     
-    // ✅ v3.0: Buscar turno aberto direto do Supabase
     const { data, error } = await supabase
       .from('work_shifts')
       .select('*')
@@ -43,7 +43,30 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
       .maybeSingle();
     
     if (error) console.error('Erro ao buscar turno:', error);
-    setActiveShift(data as WorkShift | null);
+
+    const row = data as Database['public']['Tables']['work_shifts']['Row'] | null;
+    const mapped = row
+      ? {
+          id: row.id,
+          depositoId: row.deposit_id,
+          user_id: row.user_id,
+          status: row.status as WorkShiftStatus,
+          opened_at: Date.parse(row.opened_at),
+          closed_at: row.closed_at ? Date.parse(row.closed_at) : null,
+          opening_balance: row.opening_balance,
+          closing_balance: row.closing_balance,
+          declared_cash: row.declared_cash,
+          declared_card: row.declared_card,
+          declared_pix: row.declared_pix,
+          system_cash: row.system_cash,
+          system_card: row.system_card,
+          system_pix: row.system_pix,
+          notes: null,
+          user_name: undefined,
+        }
+      : null;
+
+    setActiveShift(mapped);
     setLoading(false);
   }, [currentUser?.id, currentUser?.depositoId]);
 
@@ -55,20 +78,16 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
     async (params: { openingBalance: number; notes?: string | null }) => {
       if (!currentUser?.id || !currentUser?.depositoId) return null;
       
-      // ✅ v3.0: Abrir turno direto no Supabase
-      const newShift: Omit<WorkShift, 'id'> = {
-        user_id: currentUser.id,
-        user_name: currentUser.nome,
-        deposit_id: currentUser.depositoId,
-        status: 'OPEN',
-        opened_at: Date.now(),
-        opening_balance: params.openingBalance,
-        notes: params.notes ?? null,
-      };
-      
+      const nowIso = new Date().toISOString();
       const { data, error } = await supabase
         .from('work_shifts')
-        .insert(newShift)
+        .insert({
+          user_id: currentUser.id,
+          deposit_id: currentUser.depositoId,
+          status: 'OPEN',
+          opened_at: nowIso,
+          opening_balance: params.openingBalance,
+        })
         .select()
         .single();
       
@@ -77,7 +96,25 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
         return null;
       }
       
-      const shift = data as WorkShift;
+      const row = data as Database['public']['Tables']['work_shifts']['Row'];
+      const shift: WorkShift = {
+        id: row.id,
+        depositoId: row.deposit_id,
+        user_id: row.user_id,
+        status: row.status as WorkShiftStatus,
+        opened_at: Date.parse(row.opened_at),
+        opening_balance: row.opening_balance,
+        closing_balance: row.closing_balance,
+        declared_cash: row.declared_cash,
+        declared_card: row.declared_card,
+        declared_pix: row.declared_pix,
+        system_cash: row.system_cash,
+        system_card: row.system_card,
+        system_pix: row.system_pix,
+        closed_at: row.closed_at ? Date.parse(row.closed_at) : null,
+        notes: null,
+        user_name: undefined,
+      };
       setActiveShift(shift);
       return shift;
     },
@@ -98,7 +135,7 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
         .from('work_shifts')
         .update({
           status: params.status,
-          closed_at: Date.now(),
+          closed_at: new Date().toISOString(),
           declared_cash: params.declared.cash,
           declared_card: params.declared.card,
           declared_pix: params.declared.pix,
@@ -106,7 +143,6 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
           system_card: params.system.card,
           system_pix: params.system.pix,
           closing_balance: params.declared.cash + params.declared.card + params.declared.pix,
-          notes: params.notes ?? activeShift.notes,
         })
         .eq('id', activeShift.id)
         .select()
@@ -118,7 +154,26 @@ export const ShiftProvider: React.FC<{ currentUser: Colaborador | null; children
       }
       
       setActiveShift(null);
-      return data as WorkShift;
+      const row = data as Database['public']['Tables']['work_shifts']['Row'];
+      const shift: WorkShift = {
+        id: row.id,
+        depositoId: row.deposit_id,
+        user_id: row.user_id,
+        status: row.status as WorkShiftStatus,
+        opened_at: Date.parse(row.opened_at),
+        opening_balance: row.opening_balance,
+        closing_balance: row.closing_balance,
+        declared_cash: row.declared_cash,
+        declared_card: row.declared_card,
+        declared_pix: row.declared_pix,
+        system_cash: row.system_cash,
+        system_card: row.system_card,
+        system_pix: row.system_pix,
+        closed_at: row.closed_at ? Date.parse(row.closed_at) : null,
+        notes: null,
+        user_name: undefined,
+      };
+      return shift;
     },
     [activeShift]
   );

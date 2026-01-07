@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import L from 'leaflet';
-import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import 'leaflet.heat';
 import { X, Truck, Plus, Trash2, Map as MapIcon, Palette } from 'lucide-react';
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
-import { EditControl } from 'react-leaflet-draw';
 import { FeatureGroup, MapContainer, Pane, Polygon, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import { depositService } from '@/services';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 import { supabase } from '@/domain/supabaseClient';
 import { Deposito, DeliverySector, DeliveryZone } from '@/domain/types';
@@ -543,11 +542,12 @@ export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ on
   const zonesRaw = useLiveQuery(() => db.delivery_zones?.toArray(), []);
   const sectorsRaw = useLiveQuery(() => db.delivery_zones?.toArray(), []);
   const depositsRaw = useLiveQuery(() => db.deposits?.toArray(), []);
+  const [depositsOnline, setDepositsOnline] = useState<Deposito[]>([]);
   const zonePricingRaw = useLiveQuery(() => db.zone_pricing?.toArray(), []);
 
   const zones = zonesRaw ?? [];
   const sectors = sectorsRaw ?? [];
-  const deposits = depositsRaw ?? [];
+  const deposits = (depositsOnline.length ? depositsOnline : depositsRaw) ?? [];
   const zonePricing = zonePricingRaw ?? [];
   const loading =
     zonesRaw === undefined ||
@@ -580,13 +580,65 @@ export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ on
   const [newZonePolygon, setNewZonePolygon] = useState<LatLngTuple[][] | null>(null);
   const [polygonDirty, setPolygonDirty] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [drawReady, setDrawReady] = useState(false);
+  const [EditControlComp, setEditControlComp] = useState<React.ComponentType<any> | null>(null);
   const ordersRaw = useLiveQuery(() => db.service_orders?.toArray(), []);
 
   const mapRef = useRef<L.Map | null>(null);
   const drawnItemsRef = useRef<any>(null);
 
+  // Carregar depósitos via serviço (online)
   useEffect(() => {
-    ensureDrawReadableAreaPatch();
+    let mounted = true;
+    depositService
+      .getAll()
+      .then((rows) => {
+        if (!mounted) return;
+        const mapped = rows.map((d: any) => ({
+          id: d.id,
+          nome: d.name,
+          ativo: d.active,
+          endereco: d.address,
+          cor: d.color,
+          require_stock_audit: d.require_stock_audit,
+        } as Deposito));
+        setDepositsOnline(mapped);
+      })
+      .catch((err) => {
+        console.error('Erro ao carregar depósitos', err);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        await import('leaflet-draw');
+        // Garantir que plugins registrem Event
+        const hasDraw = !!(L as any)?.Draw?.Event;
+        if (!mounted) return;
+        if (hasDraw) {
+          const mod = await import('react-leaflet-draw');
+          setEditControlComp(() => mod.EditControl);
+          setDrawReady(true);
+          ensureDrawReadableAreaPatch();
+        } else {
+          // Fallback: não renderiza edit control, mas não quebra
+          console.warn('leaflet-draw não expôs L.Draw.Event; ferramentas de desenho desativadas');
+          setDrawReady(false);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar ferramentas de desenho', err);
+        if (mounted) setDrawReady(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // ⚠️ REMOVIDO: Sem inicialização automática de depósito
@@ -1579,26 +1631,28 @@ export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ on
                         ))}
                       </Pane>
                     )}
-                    <FeatureGroup ref={drawnItemsRef}>
-                      <EditControl
-                        position="topright"
-                        onCreated={handleDrawCreated}
-                        onEdited={handleDrawEdited}
-                        onDeleted={handleDrawDeleted}
-                        draw={{
-                          polygon: { shapeOptions: drawShapeOptions },
-                          rectangle: { shapeOptions: drawShapeOptions },
-                          polyline: false,
-                          circle: false,
-                          circlemarker: false,
-                          marker: false,
-                        }}
-                        edit={{
-                          edit: { selectedPathOptions: drawShapeOptions },
-                          remove: {},
-                        }}
-                      />
-                    </FeatureGroup>
+                    {drawReady && EditControlComp && (
+                      <FeatureGroup ref={drawnItemsRef}>
+                        <EditControlComp
+                          position="topright"
+                          onCreated={handleDrawCreated}
+                          onEdited={handleDrawEdited}
+                          onDeleted={handleDrawDeleted}
+                          draw={{
+                            polygon: { shapeOptions: drawShapeOptions },
+                            rectangle: { shapeOptions: drawShapeOptions },
+                            polyline: false,
+                            circle: false,
+                            circlemarker: false,
+                            marker: false,
+                          }}
+                          edit={{
+                            edit: { selectedPathOptions: drawShapeOptions },
+                            remove: {},
+                          }}
+                        />
+                      </FeatureGroup>
+                    )}
                     <HeatmapLayer enabled={showHeatmap} points={heatPoints} />
                   </MapContainer>
                   <button

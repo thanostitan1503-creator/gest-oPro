@@ -1,13 +1,25 @@
 
 import React, { useState, useEffect } from 'react';
+import { useSettings } from '@/contexts/SettingsContext';
 import { 
-  X, Siren, BellRing, Settings, Package, 
+  X, Siren, Settings, Package, 
   TrendingDown, CalendarClock, ShieldAlert,
   CheckCircle2, AlertTriangle, AlertOctagon,
-  Save, Search, Eye
+  Save, Search, Bot
 } from 'lucide-react';
 import { SystemAlert, AlertConfig, Produto } from '@/domain/types';
-import { scanSystemForAlerts, listProducts, getAlertsConfig, saveAlertsConfig, DEFAULT_ALERTS_CONFIG } from '@/utils/legacyHelpers';
+import { productService } from '@/services';
+import { toast } from 'sonner';
+
+// Configuração padrão (mantida em memória; sem persistência em KV)
+const DEFAULT_ALERTS_CONFIG: AlertConfig = {
+   minStock: {},
+   financialDaysNotice: 3,
+   minMarginPercent: 15,
+   enabledStock: true,
+   enabledFinancial: true,
+   enabledMargin: true,
+};
 
 const isDeliveryFeeProduct = (product: any) => {
   const flag = product?.is_delivery_fee ?? product?.isDeliveryFee;
@@ -31,75 +43,54 @@ interface AlertsModuleProps {
 
 export const AlertsModule: React.FC<AlertsModuleProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<'monitor' | 'config-stock' | 'config-fin'>('monitor');
+  const { showGasRobot, setShowGasRobot } = useSettings();
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
    const [config, setConfig] = useState<AlertConfig>(DEFAULT_ALERTS_CONFIG);
   
   const [products, setProducts] = useState<Produto[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Load Data
-  useEffect(() => {
-         let alive = true;
-         (async () => {
-            try {
-               const [alertsNow, productsNow, configNow] = await Promise.all([
-                  scanSystemForAlerts(),
-                  listProducts(),
-                  getAlertsConfig(),
-               ]);
-               if (!alive) return;
-               setAlerts(alertsNow || []);
-               setProducts(productsNow || []);
-               setConfig((configNow as AlertConfig) || DEFAULT_ALERTS_CONFIG);
-            } catch (err) {
-               console.error('Erro ao carregar dados da Central de Alertas:', err);
-               if (alive) {
-                  setAlerts([]);
-                  setProducts([]);
-                  setConfig(DEFAULT_ALERTS_CONFIG);
-               }
-            }
-         })();
-
-         return () => {
-             alive = false;
-         };
-  }, []);
-
-    const refreshAlerts = () => {
-         (async () => {
-            try {
-               const alertsNow = await scanSystemForAlerts();
-               setAlerts(alertsNow || []);
-            } catch (err) {
-               console.error('Erro ao reprocessar alertas:', err);
+   // Load Data (online-only via services)
+   useEffect(() => {
+      let alive = true;
+      (async () => {
+         try {
+            const productsNow = await productService.getAll();
+            if (!alive) return;
+            setProducts(productsNow as unknown as Produto[]);
+            setConfig(DEFAULT_ALERTS_CONFIG);
+            setAlerts([]); // scan de alertas ainda não implementado
+         } catch (err) {
+            console.error('Erro ao carregar dados da Central de Alertas:', err);
+            if (alive) {
                setAlerts([]);
+               setProducts([]);
+               setConfig(DEFAULT_ALERTS_CONFIG);
+               toast.error('Erro ao carregar produtos para alertas');
             }
-         })();
-    };
+         }
+      })();
 
-   const handleSaveConfig = async () => {
-      try {
-         await saveAlertsConfig(config);
-         refreshAlerts(); // Re-scan with new rules
-         alert('Configurações de alerta salvas e aplicadas!');
-      } catch (err) {
-         console.error('Erro ao salvar configurações de alertas:', err);
-         alert('Não foi possível salvar as configurações de alertas. Verifique sua conexão.');
-      }
+      return () => {
+         alive = false;
+      };
+   }, []);
+
+  const refreshAlerts = () => {
+    // Scanner ainda não implementado (mantém lista vazia)
+    setAlerts([]);
   };
 
-   const toggleAlertCategory = async (category: 'enabledStock' | 'enabledFinancial' | 'enabledMargin') => {
-      const newConfig = { ...config, [category]: !config[category] };
-      setConfig(newConfig);
-      try {
-         await saveAlertsConfig(newConfig);
-         setTimeout(refreshAlerts, 100);
-      } catch (err) {
-         console.error('Erro ao alternar categoria de alerta:', err);
-         alert('Não foi possível salvar esta configuração. Tente novamente.');
-         setConfig(config); // revert visual state
-      }
+  const handleSaveConfig = async () => {
+    // Sem persistência server-side; apenas memória
+    refreshAlerts();
+    toast.success('Configurações aplicadas (sessão atual)');
+  };
+
+  const toggleAlertCategory = async (category: 'enabledStock' | 'enabledFinancial' | 'enabledMargin') => {
+    const newConfig = { ...config, [category]: !config[category] };
+    setConfig(newConfig);
+    refreshAlerts();
   };
 
   const handleMinStockChange = (prodId: string, val: string) => {
@@ -114,11 +105,14 @@ export const AlertsModule: React.FC<AlertsModuleProps> = ({ onClose }) => {
   };
 
   // Filter products for config table
-  const filteredProducts = products.filter(p => 
-    p.nome.toLowerCase().includes(searchTerm.toLowerCase()) && 
-    p.tipo !== 'OUTROS' &&
-    !isServiceProduct(p)
-  );
+   const filteredProducts = products.filter(p => {
+      const nome = ((p as any).nome ?? (p as any).name ?? '').toString().toLowerCase();
+      const tipo = ((p as any).tipo ?? (p as any).type ?? '').toString();
+      const term = searchTerm.toLowerCase();
+      if (!nome.includes(term)) return false;
+      if (tipo === 'OUTROS') return false;
+      return !isServiceProduct(p);
+   });
 
   return (
     <div className="fixed inset-0 bg-app z-50 flex flex-col animate-in slide-in-from-bottom-4 duration-300">
@@ -295,6 +289,27 @@ export const AlertsModule: React.FC<AlertsModuleProps> = ({ onClose }) => {
            {/* TAB: CONFIG FIN/MARGIN */}
            {activeTab === 'config-fin' && (
              <div className="max-w-4xl mx-auto space-y-6">
+                 {/* Interface */}
+                 <div className="bg-surface p-8 rounded-2xl border border-bdr shadow-sm space-y-6">
+                   <div className="flex justify-between items-start">
+                      <div>
+                         <h3 className="text-lg font-black text-txt-main flex items-center gap-2"><Bot className="w-5 h-5 text-purple-500" /> Interface</h3>
+                         <p className="text-xs text-txt-muted font-bold mt-1">Controles de interface e automação</p>
+                      </div>
+                   </div>
+                   <div className="flex items-center justify-between">
+                     <div>
+                       <h4 className="font-bold text-txt-main">Gas-Robô</h4>
+                       <p className="text-xs text-txt-muted">Exibir o mascote de alertas flutuante.</p>
+                     </div>
+                     <button
+                        onClick={() => setShowGasRobot(!showGasRobot)}
+                        className={`w-12 h-6 rounded-full p-1 transition-colors ${showGasRobot ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                      >
+                         <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${showGasRobot ? 'translate-x-6' : ''}`} />
+                      </button>
+                   </div>
+                </div>
                 
                 {/* Financeiro */}
                 <div className="bg-surface p-8 rounded-2xl border border-bdr shadow-sm space-y-6">
@@ -357,7 +372,7 @@ export const AlertsModule: React.FC<AlertsModuleProps> = ({ onClose }) => {
 
                 <div className="flex justify-end pt-4">
                    <button onClick={handleSaveConfig} className="bg-primary text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-primary/20 flex items-center gap-2 active:scale-95 transition-transform">
-                      <Save className="w-5 h-5" /> SALVAR TODAS REGRAS
+                      <Save className="w-5 h-5" /> SALVAR REGRAS
                    </button>
                 </div>
              </div>
