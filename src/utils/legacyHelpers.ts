@@ -909,7 +909,7 @@ export async function deletePaymentMethod(id: string) {
 /**
  * Lista máquinas (stub - será implementado depois)
  */
-export async function listMachines() {
+export async function listMachines(): Promise<any[]> {
   // TODO: Implementar serviço de máquinas
   return [];
 }
@@ -917,15 +917,15 @@ export async function listMachines() {
 /**
  * Atualiza/cria máquina (stub - será implementado depois)
  */
-export async function upsertMachine(machine: any) {
+export async function upsertMachine(machine: Record<string, any>): Promise<void> {
   // TODO: Implementar serviço de máquinas
-  console.warn('upsertMachine não implementado ainda');
+  console.warn('upsertMachine não implementado ainda', machine);
 }
 
 /**
  * Registra auditoria (stub - será implementado depois)
  */
-export async function recordAudit(audit: any) {
+export async function recordAudit(audit: Record<string, any>): Promise<void> {
   // TODO: Implementar serviço de auditoria
   console.log('Auditoria:', audit);
 }
