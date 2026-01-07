@@ -16,8 +16,7 @@ import { ServiceOrderItems } from './ServiceOrderItems';
 import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '@/domain/types';
 import { PaymentMethod } from '@/types';
 import { getOrders } from '@/utils/legacyHelpers';
-import { supabase } from '@/utils/supabaseClient';
-import { productService, depositService, employeeService } from '@/services';
+import { productService, depositService, employeeService, paymentMethodService } from '@/services';
 
 // Stub para db e useLiveQuery
 const db: any = {
@@ -43,9 +42,7 @@ const listServiceOrders = async () => {
 };
 
 const listPaymentMethods = async (): Promise<any[]> => {
-  const { data, error } = await supabase.from('payment_methods').select('*').eq('is_active', true);
-  if (error) throw error;
-  return data || [];
+  return await paymentMethodService.getActive();
 };
 
 const listEmployees = async (): Promise<Colaborador[]> => {
