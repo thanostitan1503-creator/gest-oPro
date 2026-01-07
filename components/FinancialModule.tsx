@@ -264,7 +264,7 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     return { ...r, total, paid, remaining, overdue, status, requires_boleto: requiresBoleto };
   });
 
-  const paymentMethodMap = new Map((paymentMethods || []).map((m) => [m.id, m.nome]));
+  const paymentMethodMap = new Map((paymentMethods || []).map((m) => [m.id, m.name ?? m.nome]));
 
   const selectedReceivable = detailId ? (receivableItems.find((r) => r.id === detailId) || null) : null;
   const selectedBoletoReceivable = selectedBoletoReceivableId
@@ -1554,7 +1554,7 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
                     <select value={paymentMethodId} onChange={(e) => setPaymentMethodId(e.target.value)} className="w-full p-2 rounded bg-app border border-bdr text-white">
                       <option value="">Forma de pagamento</option>
                       {(paymentMethods || []).map((m) => (
-                        <option key={m.id} value={m.id}>{m.nome}</option>
+                        <option key={m.id} value={m.id}>{m.name ?? m.nome}</option>
                       ))}
                     </select>
                     <input
@@ -1683,7 +1683,6 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     </div>
   );
 };
-
 
 
 

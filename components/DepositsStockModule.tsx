@@ -12,6 +12,7 @@ import {
 } from '@/utils/legacyHelpers';
 import { employeeService, productService, type ProductPricing as ProductPricingRow } from '@/services';
 import { toast } from 'sonner';
+import { SYSTEM_USER_ID } from '@/constants/system';
 
 // ============================================================================
 // TIPOS
@@ -506,7 +507,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
               tipo: 'ENTRADA',
               quantidade: entry.quantidade_atual,
               origem: 'TRANSFERENCIA',
-              usuarioId: currentUser?.id || 'system',
+              usuarioId: currentUser?.id || SYSTEM_USER_ID,
               usuarioNome: currentUser?.nome || 'Sistema',
               motivo: `Migração de estoque do depósito ${deposit.nome} (excluído)`,
             });
@@ -803,7 +804,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         tipo: 'SAIDA',
         quantidade,
         origem: 'TRANSFERENCIA',
-        usuarioId: currentUser?.id || 'system',
+        usuarioId: currentUser?.id || SYSTEM_USER_ID,
         usuarioNome: currentUser?.nome || 'Sistema',
         motivo: `Transferência para ${activeDeposits.find(d => d.id === destId)?.nome}`,
       });
@@ -818,7 +819,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         tipo: 'ENTRADA',
         quantidade,
         origem: 'TRANSFERENCIA',
-        usuarioId: currentUser?.id || 'system',
+        usuarioId: currentUser?.id || SYSTEM_USER_ID,
         usuarioNome: currentUser?.nome || 'Sistema',
         motivo: `Transferência de ${activeDeposits.find(d => d.id === originId)?.nome}`,
       });
@@ -889,7 +890,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
             tipo: 'CARGA_INICIAL',
             quantidade: countedNum, // Quantidade total informada
             origem: 'TELA_CONTAGEM_MOVIMENTACAO',
-            usuarioId: currentUser?.id || 'system',
+            usuarioId: currentUser?.id || SYSTEM_USER_ID,
             usuarioNome: currentUser?.nome || 'Sistema',
             motivo: 'Carga inicial de estoque',
             meta: { beforeQty: 0, afterQty: countedNum, isInitialLoad: true },
@@ -907,7 +908,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
             tipo: tipoAjuste,
             quantidade: Math.abs(diff),
             origem: 'TELA_CONTAGEM_MOVIMENTACAO',
-            usuarioId: currentUser?.id || 'system',
+            usuarioId: currentUser?.id || SYSTEM_USER_ID,
             usuarioNome: currentUser?.nome || 'Sistema',
             motivo: diff > 0 ? 'Sobra identificada na contagem' : 'Falta identificada na contagem',
             meta: { beforeQty: currentQty, afterQty: countedNum, diff },

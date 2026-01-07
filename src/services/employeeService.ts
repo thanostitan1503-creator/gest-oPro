@@ -39,7 +39,7 @@ export const employeeService = {
       .from('employees')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       if (error.code === 'PGRST116') return null; // Não encontrado
@@ -57,7 +57,7 @@ export const employeeService = {
       .select('*')
       .eq('username', username.toLowerCase())
       .eq('active', true)
-      .single();
+      .maybeSingle();
 
     if (error) {
       if (error.code === 'PGRST116') return null; // Não encontrado
@@ -144,7 +144,7 @@ export const employeeService = {
 
     const { data, error } = await supabase
       .from('employees')
-      .insert(normalizedEmployee)
+      .insert(normalizedEmployee as Database['public']['Tables']['employees']['Insert'])
       .select()
       .single();
 
@@ -169,7 +169,7 @@ export const employeeService = {
 
     const { data, error } = await supabase
       .from('employees')
-      .update(normalizedUpdates)
+      .update(normalizedUpdates as Database['public']['Tables']['employees']['Update'])
       .eq('id', id)
       .select()
       .single();
@@ -193,7 +193,7 @@ export const employeeService = {
   async deactivate(id: string): Promise<void> {
     const { error } = await supabase
       .from('employees')
-      .update({ active: false })
+      .update({ active: false } as Database['public']['Tables']['employees']['Update'])
       .eq('id', id);
 
     if (error) throw error;

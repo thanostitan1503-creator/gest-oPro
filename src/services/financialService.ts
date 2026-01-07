@@ -42,9 +42,9 @@ export const financialService = {
   async createReceivable(receivable: NewAccountsReceivable): Promise<AccountsReceivable> {
     const { data, error } = await supabase
       .from('accounts_receivable')
-      .insert(receivable)
+      .insert(receivable as Database['public']['Tables']['accounts_receivable']['Insert'])
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw new Error(`Erro ao criar recebível: ${error.message}`);
     return data;
@@ -58,26 +58,43 @@ export const financialService = {
     paymentMethodId: string,
     amount: number
   ): Promise<void> {
-    // Atualiza status
+    const { data: receivable, error: fetchError } = await supabase
+      .from('accounts_receivable')
+      .select('original_amount, paid_amount, remaining_amount, status')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError) throw new Error(`Erro ao buscar recebível: ${fetchError.message}`);
+    if (!receivable) throw new Error('Recebível não encontrado');
+
+    const original = Number(receivable.original_amount || 0);
+    const currentPaid = Number(receivable.paid_amount || 0);
+    const nextPaid = currentPaid + Number(amount || 0);
+    const nextRemaining = Math.max(0, original - nextPaid);
+    const nextStatus = nextRemaining <= 0 ? 'PAGO' : (receivable.status || 'PENDENTE');
+
     const { error: updateError } = await supabase
       .from('accounts_receivable')
       .update({
-        status: 'PAGO',
-        paid_date: new Date().toISOString()
-      })
+        paid_amount: nextPaid,
+        remaining_amount: nextRemaining,
+        status: nextStatus,
+        updated_at: new Date().toISOString()
+      } as Database['public']['Tables']['accounts_receivable']['Update'])
       .eq('id', id);
 
     if (updateError) throw new Error(`Erro ao atualizar: ${updateError.message}`);
 
-    // Registra pagamento
     const { error: paymentError } = await supabase
       .from('receivable_payments')
       .insert({
         receivable_id: id,
         amount,
-        payment_method_id: paymentMethodId,
+        payment_method: paymentMethodId || null,
         paid_at: new Date().toISOString()
-      });
+      } as Database['public']['Tables']['receivable_payments']['Insert'])
+      .select()
+      .maybeSingle();
 
     if (paymentError) throw new Error(`Erro ao registrar pagamento: ${paymentError.message}`);
   },
@@ -143,7 +160,7 @@ export const financialService = {
       .from('expenses')
       .insert(expense)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw new Error(`Erro ao criar despesa: ${error.message}`);
     return data;
@@ -158,7 +175,7 @@ export const financialService = {
       .update({
         status: 'PAGO',
         paid_date: new Date().toISOString()
-      })
+      } as Database['public']['Tables']['expenses']['Update'])
       .eq('id', id);
 
     if (error) throw new Error(`Erro ao marcar como paga: ${error.message}`);
@@ -201,7 +218,7 @@ export const financialService = {
       .eq('user_id', userId)
       .eq('deposit_id', depositId)
       .eq('status', 'OPEN')
-      .single();
+      .maybeSingle();
 
     if (error && error.code !== 'PGRST116') {
       throw new Error(`Erro ao verificar turno: ${error.message}`);
@@ -230,7 +247,7 @@ export const financialService = {
         status: 'OPEN'
       })
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw new Error(`Erro ao abrir turno: ${error.message}`);
     return data;
@@ -252,7 +269,7 @@ export const financialService = {
       .from('work_shifts')
       .select('*')
       .eq('id', shiftId)
-      .single();
+      .maybeSingle();
 
     if (fetchError) throw new Error(`Erro ao buscar turno: ${fetchError.message}`);
     if (shift.status !== 'OPEN') throw new Error('Turno já está fechado');
@@ -262,7 +279,7 @@ export const financialService = {
       .from('service_orders')
       .select(`
         *,
-        payments:service_order_payments(*, payment_methods(type))
+        payments:service_order_payments(*)
       `)
       .eq('deposit_id', shift.deposit_id)
       .gte('created_at', shift.opened_at);
@@ -270,10 +287,10 @@ export const financialService = {
     let systemCash = 0, systemCard = 0, systemPix = 0;
     (orders || []).forEach((order: any) => {
       order.payments.forEach((payment: any) => {
-        const type = payment.payment_methods?.type;
-        if (type === 'cash') systemCash += payment.amount;
-        if (type === 'card') systemCard += payment.amount;
-        if (type === 'pix') systemPix += payment.amount;
+        const method = payment.payment_method;
+        if (method === 'cash') systemCash += payment.amount;
+        if (method === 'card') systemCard += payment.amount;
+        if (method === 'pix') systemPix += payment.amount;
       });
     });
 
@@ -298,7 +315,7 @@ export const financialService = {
       })
       .eq('id', shiftId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw new Error(`Erro ao fechar turno: ${error.message}`);
     return data;
@@ -339,12 +356,15 @@ export const financialService = {
     // Contas a receber que vencem hoje
     const { data: receivables } = await supabase
       .from('accounts_receivable')
-      .select('amount')
+      .select('remaining_amount, original_amount')
       .eq('deposit_id', depositId)
       .eq('status', 'PENDENTE')
       .eq('due_date', today);
 
-    const receivablesDue = (receivables || []).reduce((sum, r) => sum + r.amount, 0);
+    const receivablesDue = (receivables || []).reduce((sum, r) => {
+      const remaining = Number(r.remaining_amount ?? r.original_amount ?? 0);
+      return sum + (Number.isFinite(remaining) ? remaining : 0);
+    }, 0);
 
     return {
       revenue,

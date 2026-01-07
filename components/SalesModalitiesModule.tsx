@@ -2,9 +2,18 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Plus, Pencil, Trash2, Search, Settings, Smartphone, CheckCircle2, Banknote
 } from 'lucide-react';
-import { Maquininha, DepositoFisicoId } from '@/domain/types';
-import { PaymentMethod } from '@/types';
-import { Deposit } from '@/domain/types';
+import { Maquininha, Deposit } from '@/domain/types';
+import { PaymentMethod, PaymentMethodDepositConfig } from '@/types';
+import {
+  deleteMachine,
+  deletePaymentMethod,
+  listMachines,
+  listPaymentMethods,
+  listPaymentMethodDepositConfigs,
+  listDeposits,
+  recordAudit,
+  upsertMachine,
+} from '@/utils/legacyHelpers';
 // ⚠️ REMOVIDO v3.0 (use Services):
 // import {
 //   deleteMachine,
@@ -17,6 +26,7 @@ import { Deposit } from '@/domain/types';
 // } from '@/domain/repositories/index';
 import { PaymentMethodsModal } from './PaymentMethodsModal';
 import { PaymentMethodsList } from './PaymentMethodsList';
+import { supabase } from '@/utils/supabaseClient';
 
 interface SalesModalitiesModuleProps {
   onClose: () => void;
@@ -27,6 +37,7 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
   
   // -- Data State --
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [methodConfigs, setMethodConfigs] = useState<PaymentMethodDepositConfig[]>([]);
   const [machines, setMachines] = useState<Maquininha[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
 
@@ -38,26 +49,44 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
   // -- Forms State --
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [machineForm, setMachineForm] = useState<Partial<Maquininha>>({});
+  const [userId, setUserId] = useState<string | null>(null);
 
   const refreshMethods = useCallback(async () => {
     const pm = await listPaymentMethods();
     setMethods(pm);
   }, []);
 
+  const refreshMethodConfigs = useCallback(async () => {
+    const configs = await listPaymentMethodDepositConfigs();
+    setMethodConfigs(configs);
+  }, []);
+
   // -- Load Data --
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [pm, mac, deps] = await Promise.all([listPaymentMethods(), listMachines(), listDeposits()]);
+      const [pm, mac, deps, configs] = await Promise.all([
+        listPaymentMethods(),
+        listMachines(),
+        listDeposits(),
+        listPaymentMethodDepositConfigs(),
+      ]);
       if (!alive) return;
 
       setMethods(pm);
       setMachines(mac);
       setDeposits(deps);
+      setMethodConfigs(configs);
     })();
     return () => {
       alive = false;
     };
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUserId(data?.user?.id ?? null);
+    });
   }, []);
 
   // -- Handlers: Methods --
@@ -66,6 +95,7 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
 
     await deletePaymentMethod(id);
     await refreshMethods();
+    await refreshMethodConfigs();
   };
 
   // -- Handlers: Machines --
@@ -88,7 +118,7 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
     setIsMachineModalOpen(false);
 
     await recordAudit({
-      usuario_id: 'ADMIN',
+      usuario_id: userId,
       deposit_id: undefined,
       entidade: 'PAGAMENTO',
       entidade_id: newMachine.id,
@@ -195,6 +225,8 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
             <div className="bg-surface rounded-2xl shadow-sm border border-bdr p-4 overflow-hidden animate-in fade-in">
               <PaymentMethodsList 
                 methods={filteredMethods}
+                configs={methodConfigs}
+                deposits={deposits}
                 onEdit={(m) => { setSelectedMethod(m); setIsMethodModalOpen(true); }}
                 onDelete={handleDeleteMethod}
               />
@@ -253,11 +285,18 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
       <PaymentMethodsModal 
         isOpen={isMethodModalOpen}
         onClose={() => setIsMethodModalOpen(false)}
+        deposits={deposits}
+        configs={methodConfigs}
         initialMethod={selectedMethod}
         onSaved={async (saved) => {
+          if (!saved || !saved.id) {
+            console.error('Erro: Método de pagamento salvo é inválido.', saved);
+            return;
+          }
           await refreshMethods();
+          await refreshMethodConfigs();
           await recordAudit({
-            usuario_id: 'ADMIN',
+            usuario_id: userId,
             deposit_id: undefined,
             entidade: 'PAGAMENTO',
             entidade_id: saved.id,
@@ -336,7 +375,7 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
                         }}
                       />
                       <span className="text-sm font-bold text-txt-main">
-                        {dep.name}
+                        {dep.nome}
                       </span>
                     </label>
                   ))}

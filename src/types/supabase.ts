@@ -223,26 +223,62 @@ export interface Database {
         Row: {
           id: string
           name: string
-          type: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other'
+          receipt_type: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other'
           generates_receivable: boolean
           is_active: boolean
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
           name: string
-          type: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other'
+          receipt_type: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other'
           generates_receivable?: boolean
           is_active?: boolean
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
           name?: string
-          type?: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other'
+          receipt_type?: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other'
           generates_receivable?: boolean
           is_active?: boolean
           created_at?: string
+          updated_at?: string
+        }
+      }
+
+      /**
+       * 5a. PAYMENT_METHOD_DEPOSIT_CONFIG - Config por deposito
+       */
+      payment_method_deposit_config: {
+        Row: {
+          payment_method_id: string
+          deposit_id: string
+          is_active: boolean
+          due_days: number
+          max_installments: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          payment_method_id: string
+          deposit_id: string
+          is_active?: boolean
+          due_days?: number
+          max_installments?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          payment_method_id?: string
+          deposit_id?: string
+          is_active?: boolean
+          due_days?: number
+          max_installments?: number
+          created_at?: string
+          updated_at?: string
         }
       }
 
@@ -580,42 +616,48 @@ export interface Database {
       accounts_receivable: {
         Row: {
           id: string
+          order_id: string | null
+          deposit_id: string | null
           client_id: string | null
-          service_order_id: string | null
-          description: string
-          amount: number
-          due_date: string
-          paid_date: string | null
-          status: 'PENDENTE' | 'PAGO' | 'ATRASADO'
-          deposit_id: string
-          created_at: string
-          updated_at: string
+          client_name: string | null
+          original_amount: number
+          paid_amount: number | null
+          remaining_amount: number | null
+          status: string | null
+          due_date: string | null
+          notes: string | null
+          created_at: string | null
+          updated_at: string | null
         }
         Insert: {
           id?: string
+          order_id?: string | null
+          deposit_id?: string | null
           client_id?: string | null
-          service_order_id?: string | null
-          description: string
-          amount: number
-          due_date: string
-          paid_date?: string | null
-          status?: 'PENDENTE' | 'PAGO' | 'ATRASADO'
-          deposit_id: string
-          created_at?: string
-          updated_at?: string
+          client_name?: string | null
+          original_amount: number
+          paid_amount?: number | null
+          remaining_amount?: number | null
+          status?: string | null
+          due_date?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
         Update: {
           id?: string
+          order_id?: string | null
+          deposit_id?: string | null
           client_id?: string | null
-          service_order_id?: string | null
-          description?: string
-          amount?: number
-          due_date?: string
-          paid_date?: string | null
-          status?: 'PENDENTE' | 'PAGO' | 'ATRASADO'
-          deposit_id?: string
-          created_at?: string
-          updated_at?: string
+          client_name?: string | null
+          original_amount?: number
+          paid_amount?: number | null
+          remaining_amount?: number | null
+          status?: string | null
+          due_date?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
         }
       }
 
@@ -627,28 +669,28 @@ export interface Database {
           id: string
           receivable_id: string
           amount: number
-          payment_method_id: string
-          paid_at: string
-          notes: string | null
-          created_at: string
+          payment_method: string | null
+          user_id: string | null
+          paid_at: string | null
+          created_at: string | null
         }
         Insert: {
           id?: string
           receivable_id: string
           amount: number
-          payment_method_id: string
-          paid_at: string
-          notes?: string | null
-          created_at?: string
+          payment_method?: string | null
+          user_id?: string | null
+          paid_at?: string | null
+          created_at?: string | null
         }
         Update: {
           id?: string
           receivable_id?: string
           amount?: number
-          payment_method_id?: string
-          paid_at?: string
-          notes?: string | null
-          created_at?: string
+          payment_method?: string | null
+          user_id?: string | null
+          paid_at?: string | null
+          created_at?: string | null
         }
       }
 

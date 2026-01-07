@@ -10,7 +10,10 @@
 
 import { supabase } from './supabaseClient';
 import type { Database } from '@/types/supabase';
+import type { PaymentMethod, PaymentMethodDepositConfig } from '@/types';
+import type { Maquininha } from '@/domain/types';
 import { useState, useEffect } from 'react';
+import { SYSTEM_USER_ID } from '@/constants/system';
 
 // ==================== STUBS UNIVERSAIS ====================
 
@@ -576,11 +579,146 @@ export const listProducts = async () => {
 
 export const getProducts = listProducts;
 
+// ==================== PAYMENT METHODS ====================
+
+const normalizePaymentMethodRow = (row: any): PaymentMethod => ({
+  id: row.id,
+  name: row.name ?? '',
+  receipt_type: row.receipt_type ?? 'other',
+  generates_receivable: row.generates_receivable ?? false,
+  is_active: row.is_active ?? true,
+  created_at: row.created_at ?? null,
+  updated_at: row.updated_at ?? null,
+});
+
+export const listPaymentMethods = async (): Promise<PaymentMethod[]> => {
+  const { data, error } = await supabase.from('payment_methods').select('*');
+  if (error) throw error;
+  return (data || []).map(normalizePaymentMethodRow);
+};
+
+export const upsertPaymentMethod = async (method: PaymentMethod): Promise<PaymentMethod> => {
+  const payload: any = {
+    id: method.id,
+    name: method.name,
+    receipt_type: method.receipt_type,
+    generates_receivable: method.generates_receivable,
+    is_active: method.is_active,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (method.created_at) {
+    payload.created_at = method.created_at;
+  }
+
+  const { data, error } = await supabase
+    .from('payment_methods')
+    .upsert(payload)
+    .maybeSingle();
+
+  if (error) throw error;
+  return normalizePaymentMethodRow(data || method);
+};
+
+export const deletePaymentMethod = async (id: string) => {
+  const deleteResponse = await supabase.from('payment_methods').delete().eq('id', id);
+  if (!deleteResponse.error) return;
+
+  const updateResponse = await supabase.from('payment_methods').update({ is_active: false }).eq('id', id);
+  if (updateResponse.error) throw updateResponse.error;
+};
+
+const normalizePaymentMethodDepositConfigRow = (row: any): PaymentMethodDepositConfig => ({
+  payment_method_id: row.payment_method_id,
+  deposit_id: row.deposit_id,
+  is_active: row.is_active ?? true,
+  due_days: Number(row.due_days ?? 0),
+  max_installments: Number(row.max_installments ?? 1),
+  created_at: row.created_at ?? null,
+  updated_at: row.updated_at ?? null,
+});
+
+const isMissingPaymentConfigTable = (error: any) =>
+  error?.code === 'PGRST205' ||
+  String(error?.message || '').includes('payment_method_deposit_config');
+
+export const listPaymentMethodDepositConfigs = async (filters?: {
+  paymentMethodId?: string;
+  depositId?: string;
+}): Promise<PaymentMethodDepositConfig[]> => {
+  let query = supabase.from('payment_method_deposit_config').select('*');
+  if (filters?.paymentMethodId) {
+    query = query.eq('payment_method_id', filters.paymentMethodId);
+  }
+  if (filters?.depositId) {
+    query = query.eq('deposit_id', filters.depositId);
+  }
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingPaymentConfigTable(error)) {
+      console.warn('payment_method_deposit_config nao existe no schema.', error);
+      return [];
+    }
+    throw error;
+  }
+  return (data || []).map(normalizePaymentMethodDepositConfigRow);
+};
+
+export const getPaymentMethodDepositConfig = async (
+  paymentMethodId: string,
+  depositId: string
+): Promise<PaymentMethodDepositConfig | null> => {
+  const { data, error } = await supabase
+    .from('payment_method_deposit_config')
+    .select('*')
+    .eq('payment_method_id', paymentMethodId)
+    .eq('deposit_id', depositId)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingPaymentConfigTable(error)) {
+      console.warn('payment_method_deposit_config nao existe no schema.', error);
+      return null;
+    }
+    throw error;
+  }
+  return data ? normalizePaymentMethodDepositConfigRow(data) : null;
+};
+
+export const upsertPaymentMethodDepositConfigs = async (
+  configs: PaymentMethodDepositConfig[]
+): Promise<PaymentMethodDepositConfig[]> => {
+  if (!configs.length) return [];
+
+  const payload = configs.map((config) => ({
+    payment_method_id: config.payment_method_id,
+    deposit_id: config.deposit_id,
+    is_active: config.is_active,
+    due_days: config.due_days,
+    max_installments: config.max_installments,
+    updated_at: new Date().toISOString(),
+  }));
+
+  const { data, error } = await supabase
+    .from('payment_method_deposit_config')
+    .upsert(payload, { onConflict: 'payment_method_id,deposit_id' })
+    .select('*');
+
+  if (error) {
+    if (isMissingPaymentConfigTable(error)) {
+      console.warn('payment_method_deposit_config nao existe no schema.', error);
+      return [];
+    }
+    throw error;
+  }
+  return (data || []).map(normalizePaymentMethodDepositConfigRow);
+};
+
 // ==================== SALES MODALITIES (LEGACY KV) ====================
 
 const SAFE_KV_FETCH = async (key: string, fallback: any) => {
   try {
-    const { data, error, status } = await supabase.from('kv').select('*').eq('key', key).single();
+    const { data, error, status } = await supabase.from('kv').select('*').eq('key', key).maybeSingle();
     if (error) {
       const acceptable = error.code === 'PGRST116' || status === 406 || status === 404;
       if (!acceptable) throw error;
@@ -596,6 +734,28 @@ const SAFE_KV_FETCH = async (key: string, fallback: any) => {
 const SAFE_KV_SAVE = async (key: string, value: any) => {
   const { error } = await supabase.from('kv').upsert({ key, value });
   if (error) throw error;
+};
+
+// ==================== MACHINES (LEGACY KV) ====================
+
+export const listMachines = async (): Promise<Maquininha[]> => {
+  const items = await SAFE_KV_FETCH('machines', []);
+  return Array.isArray(items) ? (items as Maquininha[]) : [];
+};
+
+export const upsertMachine = async (machine: Maquininha) => {
+  const current = await listMachines();
+  const index = current.findIndex((item) => item.id === machine.id);
+  const next = index >= 0
+    ? current.map((item) => (item.id === machine.id ? machine : item))
+    : [...current, machine];
+  await SAFE_KV_SAVE('machines', next);
+};
+
+export const deleteMachine = async (id: string) => {
+  const current = await listMachines();
+  const next = current.filter((item) => item.id !== id);
+  await SAFE_KV_SAVE('machines', next);
 };
 
 export const getSalesModalities = async () => {
@@ -848,6 +1008,28 @@ export const saveAlertsConfig = async (config: any) => {
 export const normalizeDepositId = (id: any) => {
   if (!id) return null;
   return String(id);
+};
+
+export const recordAudit = async (entry: any) => {
+  if (!entry) return;
+  const payload = {
+    entity_type: entry.entidade ?? entry.entity_type ?? 'UNKNOWN',
+    entity_id: entry.entidade_id ?? entry.entity_id ?? '',
+    action: String(entry.acao ?? entry.action ?? 'UPDATE').toUpperCase(),
+    user_id: entry.usuario_id ?? entry.user_id ?? SYSTEM_USER_ID,
+    changes: {
+      before: entry.antes_json ?? entry.before_json ?? null,
+      after: entry.depois_json ?? entry.after_json ?? null,
+      deposit_id: entry.deposit_id ?? entry.deposito_id ?? null,
+    },
+  };
+
+  try {
+    const { error } = await supabase.from('audit_logs').insert(payload);
+    if (error) console.warn('recordAudit failed:', error);
+  } catch (err) {
+    console.warn('recordAudit fallback error:', err);
+  }
 };
 
 // ==================== CONTROL PANEL ====================

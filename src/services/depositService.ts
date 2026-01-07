@@ -48,7 +48,7 @@ export const depositService = {
       .from('deposits')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
     
     if (error) {
       if (error.code === 'PGRST116') return null; // Not found
@@ -81,7 +81,7 @@ export const depositService = {
   async create(deposit: NewDeposit): Promise<Deposit> {
     const { data, error } = await supabase
       .from('deposits')
-      .insert(deposit)
+      .insert(deposit as Database['public']['Tables']['deposits']['Insert'])
       .select()
       .single();
 
@@ -97,10 +97,10 @@ export const depositService = {
   async update(id: string, updates: UpdateDeposit): Promise<Deposit> {
     const { data, error } = await supabase
       .from('deposits')
-      .update(updates)
+      .update(updates as Database['public']['Tables']['deposits']['Update'])
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error; // ⚠️ Lança o erro original
     return data;
@@ -114,7 +114,7 @@ export const depositService = {
   async deactivate(id: string): Promise<void> {
     const { error } = await supabase
       .from('deposits')
-      .update({ active: false })
+      .update({ active: false } as Database['public']['Tables']['deposits']['Update'])
       .eq('id', id);
 
     if (error) throw error; // ⚠️ Lança o erro original

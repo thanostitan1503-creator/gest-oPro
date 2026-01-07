@@ -34,7 +34,7 @@ export const clientService = {
       .from('clients')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
     
     if (error) {
       if (error.code === 'PGRST116') return null;
@@ -52,7 +52,7 @@ export const clientService = {
       .select('*')
       .eq('phone', phone)
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
     
     if (error) {
       if (error.code === 'PGRST116') return null;
@@ -67,7 +67,7 @@ export const clientService = {
   async create(client: NewClient): Promise<Client> {
     const { data, error } = await supabase
       .from('clients')
-      .insert(client)
+      .insert(client as Database['public']['Tables']['clients']['Insert'])
       .select()
       .single();
 
@@ -81,7 +81,7 @@ export const clientService = {
   async update(id: string, updates: UpdateClient): Promise<Client> {
     const { data, error } = await supabase
       .from('clients')
-      .update(updates)
+      .update(updates as Database['public']['Tables']['clients']['Update'])
       .eq('id', id)
       .select()
       .single();
@@ -96,7 +96,7 @@ export const clientService = {
   async deactivate(id: string): Promise<void> {
     const { error } = await supabase
       .from('clients')
-      .update({ is_active: false })
+      .update({ is_active: false } as Database['public']['Tables']['clients']['Update'])
       .eq('id', id);
 
     if (error) throw new Error(`Erro ao desativar cliente: ${error.message}`);
@@ -125,7 +125,7 @@ export const clientService = {
       .from('clients')
       .select(`
         *,
-        accounts_receivable!inner(amount)
+        accounts_receivable!inner(remaining_amount, original_amount)
       `)
       .eq('is_active', true)
       .eq('accounts_receivable.status', 'PENDENTE');
@@ -139,7 +139,8 @@ export const clientService = {
         clientsMap.set(row.id, { ...row, debt: 0 });
       }
       const client = clientsMap.get(row.id)!;
-      client.debt += row.accounts_receivable.amount;
+      const remaining = Number(row.accounts_receivable?.remaining_amount ?? row.accounts_receivable?.original_amount ?? 0);
+      client.debt += Number.isFinite(remaining) ? remaining : 0;
     });
     
     return Array.from(clientsMap.values());

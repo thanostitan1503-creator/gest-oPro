@@ -4,10 +4,18 @@ export interface PaymentMethod {
   id: string;
   name: string;
   receipt_type: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other';
-  enters_receivables: boolean;
-  default_due_days: number;
+  generates_receivable: boolean;
   is_active: boolean;
-  machine_label?: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PaymentMethodDepositConfig {
+  payment_method_id: string;
+  deposit_id: string;
+  is_active: boolean;
+  due_days: number;
+  max_installments: number;
   created_at?: string | null;
   updated_at?: string | null;
 }

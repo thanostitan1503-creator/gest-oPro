@@ -298,10 +298,8 @@ export type PaymentMethod = {
   id: string;                // UUID
   name: string;              // minúsculo no banco
   receipt_type: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other';
-  enters_receivables: boolean; // true = gera contas a receber
-  default_due_days: number;  // dias padrão de prazo
+  generates_receivable: boolean; // true = gera contas a receber
   is_active: boolean;
-  machine_label?: string;
   created_at?: string | null;
   updated_at?: string | null;
 };

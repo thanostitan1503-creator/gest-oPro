@@ -14,10 +14,11 @@ import { jsPDF } from 'jspdf';
 import { NewClientModal } from './NewClientModal';
 import { ServiceOrderItems } from './ServiceOrderItems';
 import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '@/domain/types';
-import { PaymentMethod } from '@/types';
-import { getOrders } from '@/utils/legacyHelpers';
+import { PaymentMethod, PaymentMethodDepositConfig } from '@/types';
+import { getOrders, listPaymentMethodDepositConfigs } from '@/utils/legacyHelpers';
 import { supabase } from '@/utils/supabaseClient';
-import { productService, depositService, employeeService } from '@/services';
+import { productService, depositService, employeeService, financialService } from '@/services';
+import { SYSTEM_USER_ID } from '@/constants/system';
 
 // Stub para db e useLiveQuery
 const db: any = {
@@ -42,10 +43,18 @@ const listServiceOrders = async () => {
   return await getOrders();
 };
 
-const listPaymentMethods = async (): Promise<any[]> => {
+const listPaymentMethods = async (): Promise<PaymentMethod[]> => {
   const { data, error } = await supabase.from('payment_methods').select('*').eq('is_active', true);
   if (error) throw error;
-  return data || [];
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    name: row.name ?? '',
+    receipt_type: row.receipt_type ?? 'other',
+    generates_receivable: row.generates_receivable ?? false,
+    is_active: row.is_active ?? true,
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+  }));
 };
 
 const listEmployees = async (): Promise<Colaborador[]> => {
@@ -470,6 +479,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   // ... (Full component code is large, updating the render part) ...
   const [products, setProducts] = useState<Produto[]>([]);
   const [paymentMethodsDB, setPaymentMethodsDB] = useState<PaymentMethod[]>([]);
+  const [paymentMethodConfigs, setPaymentMethodConfigs] = useState<PaymentMethodDepositConfig[]>([]);
   const [dbClients, setDbClients] = useState<Cliente[]>([]);
   const [availableDeposits, setAvailableDeposits] = useState<Deposito[]>([]);
   const [availableDrivers, setAvailableDrivers] = useState<Colaborador[]>([]);
@@ -477,10 +487,11 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [prodsRaw, methods, clients] = await Promise.all([
+      const [prodsRaw, methods, clients, configs] = await Promise.all([
         productService.getAll().catch(() => []),
-        db.payment_methods.filter((p) => p.is_active === true).toArray(),
+        listPaymentMethods().catch(() => []),
         listClients(),
+        listPaymentMethodDepositConfigs().catch(() => []),
       ]);
 
       let nextProducts = Array.isArray(prodsRaw) ? prodsRaw : [];
@@ -565,6 +576,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       if (!alive) return;
       setProducts(nextProducts);
       setPaymentMethodsDB(methods);
+      setPaymentMethodConfigs(configs);
       setDbClients(clients);
       setDeliveryFeeProductId(deliveryFeeProduct?.id ?? null);
     })();
@@ -649,6 +661,24 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   const [statusView, setStatusView] = useState('Pendente');
   const [employeeId, setEmployeeId] = useState('');
   const [depositId, setDepositId] = useState('');
+  const activeDepositId = depositId || initialData?.depositoId || '';
+  const paymentMethodConfigMap = useMemo(() => {
+    const map = new Map<string, PaymentMethodDepositConfig>();
+    if (!activeDepositId) return map;
+    paymentMethodConfigs.forEach((config) => {
+      if (config.deposit_id === activeDepositId) {
+        map.set(config.payment_method_id, config);
+      }
+    });
+    return map;
+  }, [paymentMethodConfigs, activeDepositId]);
+  const availablePaymentMethods = useMemo(() => {
+    if (!activeDepositId) return paymentMethodsDB;
+    return paymentMethodsDB.filter((method) => {
+      const config = paymentMethodConfigMap.get(method.id);
+      return config ? config.is_active !== false : true;
+    });
+  }, [paymentMethodsDB, paymentMethodConfigMap, activeDepositId]);
   const [zone, setZone] = useState('');
   const [zoneId, setZoneId] = useState<string | null>(null);
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -816,7 +846,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
         return {
           id: `pay-${idx}`,
           methodId: (p as any).payment_method_id || (p as any).formaPagamentoId,
-          methodName: method?.nome || 'Pagamento',
+          methodName: method?.name ?? method?.nome ?? 'Pagamento',
           value: (p as any).amount ?? (p as any).valor,
           methodType: method?.receipt_type ?? (p as any).type ?? 'other',
         };
@@ -1292,7 +1322,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     const newPayment: PaymentItem = {
       id: crypto.randomUUID(),
       methodId: method.id,
-      methodName: method.nome,
+      methodName: method.name,
       methodType: method.receipt_type,
       value: valToUse,
     };
@@ -1306,7 +1336,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     if (initialData?.id) {
       addHistoryLog(
         'PAGAMENTO_ADICIONADO',
-        `Adicionado ${method.nome}: R$ ${valToUse.toFixed(2)}`
+        `Adicionado ${method.name}: R$ ${valToUse.toFixed(2)}`
       );
     }
   };
@@ -1330,7 +1360,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     const updatedPayment: PaymentItem = {
       ...oldPayment,
       methodId: method.id,
-      methodName: method.nome,
+      methodName: method.name,
       methodType: method.receipt_type,
       value: newValue,
     };
@@ -1340,8 +1370,8 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     // Registrar no histórico se estiver editando OS existente
     if (initialData?.id) {
       const changes: string[] = [];
-      if (oldPayment.methodName !== method.nome) {
-        changes.push(`Forma: ${oldPayment.methodName} → ${method.nome}`);
+      if (oldPayment.methodName !== method.name) {
+        changes.push(`Forma: ${oldPayment.methodName} → ${method.name}`);
       }
       if (oldPayment.value !== newValue) {
         changes.push(`Valor: R$ ${oldPayment.value.toFixed(2)} → R$ ${newValue.toFixed(2)}`);
@@ -1383,7 +1413,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       id: crypto.randomUUID(),
       data: Date.now(), // Timestamp em milissegundos
       usuario: currentUser?.nome || 'Sistema',
-      usuarioId: currentUser?.id || 'system',
+      usuarioId: currentUser?.id || SYSTEM_USER_ID,
       acao,
       detalhe,
     };
@@ -1447,7 +1477,6 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     const orderPayments = payments.map((p) => ({
       payment_method_id: p.methodId,
       amount: p.value,
-      type: p.methodType,
     }));
 
     // Determinar Status Inicial
@@ -1457,10 +1486,12 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       finalStatus = 'PENDENTE_ENTREGA';
     }
 
+    const effectiveDepositId = depositId || initialData?.depositoId || 'DEP1';
+
     const orderData: OrdemServico = {
       id: initialData?.id || crypto.randomUUID(),
       numeroOs: initialData?.numeroOs || Date.now().toString().slice(-6),
-      depositoId: depositId || initialData?.depositoId || 'DEP1',
+      depositoId: effectiveDepositId,
       clienteId: selectedClient.id,
       clienteNome: selectedClient.nome,
       clienteTelefone: selectedClient.telefone,
@@ -1491,6 +1522,37 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     const historico = [...(orderData.historico || [])];
     historico.unshift(logEntry);
     await upsertServiceOrder({ ...orderData, historico });
+
+    if (!initialData?.id) {
+      const receivableCandidates = payments.filter((payment) => payment.value > 0);
+      for (const payment of receivableCandidates) {
+        const method = paymentMethodsDB.find((m) => m.id === payment.methodId);
+        if (!method) continue;
+        const isImmediate = method.receipt_type === 'cash' || method.receipt_type === 'pix';
+        if (isImmediate || !method.generates_receivable) continue;
+
+        const config = paymentMethodConfigMap.get(method.id);
+        const configActive = config?.is_active ?? true;
+        const dueDays = Number(config?.due_days ?? 0);
+        if (!configActive || dueDays <= 0) continue;
+
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + dueDays);
+
+        await financialService.createReceivable({
+          order_id: orderData.id,
+          deposit_id: effectiveDepositId,
+          client_id: selectedClient.id,
+          client_name: selectedClient.nome,
+          original_amount: payment.value,
+          paid_amount: 0,
+          remaining_amount: payment.value,
+          status: 'PENDENTE',
+          due_date: dueDate.toISOString().split('T')[0],
+          notes: `OS ${orderData.numeroOs} - ${method.name ?? method.id}`,
+        });
+      }
+    }
 
     // 2. Create Delivery Job if needed
     if (serviceType === 'DELIVERY' && !initialData) {
@@ -1806,8 +1868,8 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
                     className="h-8 px-2 border border-gray-300 rounded text-gray-700 bg-white"
                   >
                     <option value="">Forma</option>
-                    {paymentMethodsDB.map(m => (
-                      <option key={m.id} value={m.id}>{m.nome}</option>
+                    {availablePaymentMethods.map(m => (
+                      <option key={m.id} value={m.id}>{m.name ?? m.nome}</option>
                     ))}
                   </select>
                   <input
@@ -1842,8 +1904,8 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
                   className="h-8 px-2 border border-gray-300 rounded text-gray-700 bg-white"
                 >
                   <option value="">Forma</option>
-                  {paymentMethodsDB.map(m => (
-                    <option key={m.id} value={m.id}>{m.nome}</option>
+                  {availablePaymentMethods.map(m => (
+                    <option key={m.id} value={m.id}>{m.name ?? m.nome}</option>
                   ))}
                 </select>
                 <input
@@ -2510,7 +2572,7 @@ export const NewServiceOrder: React.FC<NewServiceOrderProps> = ({ onClose, curre
                          const method = paymentMethods.find((m) => m.id === methodId);
                          return (
                            <div key={idx} className="flex items-center justify-between text-xs font-bold text-txt-muted bg-surface px-3 py-2 rounded border border-bdr">
-                             <span>{method?.nome || methodId || 'Pagamento'}</span>
+                             <span>{method?.name ?? method?.nome ?? (methodId || 'Pagamento')}</span>
                              <span className="text-txt-main">{fmtCurrency(amount)}</span>
                            </div>
                          );

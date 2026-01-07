@@ -169,12 +169,16 @@ export function CreateSaleExample() {
       // 5. Se gerou fiado, cria conta a receber
       if (formData.paymentType === 'fiado') {
         await financialService.createReceivable({
+          order_id: order.id,
+          deposit_id: formData.depositId,
           client_id: formData.clientId,
-          service_order_id: order.id,
-          description: `Venda ${order.order_number}`,
-          amount: total,
+          client_name: formData.clientName,
+          original_amount: total,
+          paid_amount: 0,
+          remaining_amount: total,
+          status: 'PENDENTE',
           due_date: formData.dueDate,
-          deposit_id: formData.depositId
+          notes: `Venda ${order.order_number}`
         });
       }
 

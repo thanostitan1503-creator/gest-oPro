@@ -7,6 +7,7 @@ import {
   OrigemMovimento,
   TipoMovimentoEstoque
 } from './types';
+import { SYSTEM_USER_ID } from '@/constants/system';
 
 // Helper to generate UUIDs (mock implementation for pure logic)
 const uuid = () => Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -136,7 +137,7 @@ export function calcularMovimentosEstoque(
         quantidade: item.quantidade,
         origem: origem,
         referenciaId: os.id,
-        usuarioId: 'SYSTEM',
+        usuarioId: SYSTEM_USER_ID,
         usuarioNome: 'Sistema'
       });
     }
@@ -173,7 +174,7 @@ export function calcularMovimentosEstoque(
           quantidade: item.quantidade,
           origem: origem,
           referenciaId: os.id,
-          usuarioId: 'SYSTEM',
+          usuarioId: SYSTEM_USER_ID,
           usuarioNome: 'Sistema'
         });
       }
