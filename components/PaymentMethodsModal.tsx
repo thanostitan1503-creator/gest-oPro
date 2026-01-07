@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PaymentMethod } from '@/types';
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+import { paymentMethodService } from '@/services';
 import { X } from 'lucide-react';
 
 interface PaymentMethodsModalProps {
@@ -63,7 +63,7 @@ export function PaymentMethodsModal({ isOpen, onClose, initialMethod, onSaved }:
         updated_at: initialMethod?.updated_at,
       };
 
-      const saved = await upsertPaymentMethod(payload);
+      const saved = await paymentMethodService.upsert(payload);
       onSaved?.(saved);
       onClose();
     } catch (err) {

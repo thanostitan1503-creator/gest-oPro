@@ -887,3 +887,53 @@ export const performFactoryReset = async () => {
   alert('Sistema resetado. Recarregue a página.');
   window.location.reload();
 };
+
+// ==================== PAYMENT METHODS HELPERS ====================
+
+import { paymentMethodService } from '@/services';
+
+/**
+ * Lista todas as formas de pagamento
+ */
+export async function listPaymentMethods() {
+  return await paymentMethodService.getAll();
+}
+
+/**
+ * Delete uma forma de pagamento
+ */
+export async function deletePaymentMethod(id: string) {
+  return await paymentMethodService.delete(id);
+}
+
+/**
+ * Lista máquinas (stub - será implementado depois)
+ */
+export async function listMachines(): Promise<any[]> {
+  // TODO: Implementar serviço de máquinas
+  return [];
+}
+
+/**
+ * Atualiza/cria máquina (stub - será implementado depois)
+ */
+export async function upsertMachine(machine: Record<string, any>): Promise<void> {
+  // TODO: Implementar serviço de máquinas
+  console.warn('upsertMachine não implementado ainda', machine);
+}
+
+/**
+ * Registra auditoria (stub - será implementado depois)
+ */
+export async function recordAudit(audit: Record<string, any>): Promise<void> {
+  // TODO: Implementar serviço de auditoria
+  console.log('Auditoria:', audit);
+}
+
+/**
+ * Lista depósitos
+ */
+export async function listDeposits() {
+  const { data } = await supabase.from('deposits').select('*').eq('active', true);
+  return data || [];
+}

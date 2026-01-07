@@ -14,6 +14,7 @@ export * from './clientService';
 export * from './financialService';
 export * from './deliveryService';
 export * from './employeeService'; // 👥 Serviço de colaboradores
+export * from './paymentMethodService'; // 💳 Serviço de formas de pagamento
 
 // ==================== HELPER: Cliente Supabase Compartilhado ====================
 import { createClient } from '@supabase/supabase-js';
