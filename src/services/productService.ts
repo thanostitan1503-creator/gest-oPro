@@ -8,51 +8,109 @@
 import { supabase } from '@/utils/supabaseClient';
 import type { Database } from '@/types/supabase';
 
-// Atalhos de tipos
+// Atalhos de tipos (schema real)
 export type Product = Database['public']['Tables']['products']['Row'];
 export type NewProduct = Database['public']['Tables']['products']['Insert'];
 export type UpdateProduct = Database['public']['Tables']['products']['Update'];
-export type ProductPricing = Database['public']['Tables']['product_pricing']['Row'];
 type ProductInsert = Database['public']['Tables']['products']['Insert'];
 type ProductUpdate = Database['public']['Tables']['products']['Update'];
-type ProductPricingInsert = Database['public']['Tables']['product_pricing']['Insert'];
 
-/**
- * Service Pattern para Products
- */
+// Como a precificação agora está na PRÓPRIA tabela products (coluna deposit_id),
+// expomos um tipo leve compatível com o consumo atual do front.
+export type ProductPricing = {
+  product_id: string;
+  deposit_id: string | null;
+  price: number; // mapeia para sale_price
+  sale_price?: number | null;
+  exchange_price?: number | null;
+  full_price?: number | null;
+};
+
+type ProductPricingInsert = {
+  product_id: string;
+  deposit_id: string;
+  price: number;
+};
+
+// Normaliza payload vindo do front (camelCase/PT) para colunas do Supabase (snake_case)
+const normalizeProductPayload = (input: any): ProductInsert => {
+  const payload: ProductInsert = {
+    id: input.id,
+    code: input.code ?? input.codigo ?? null,
+    name: input.name ?? input.nome ?? '',
+    description: input.description ?? input.descricao ?? null,
+    type: input.type ?? input.tipo ?? null,
+    unit: input.unit ?? input.unidade ?? 'un',
+    sale_price: input.sale_price ?? input.preco_venda ?? null,
+    exchange_price: input.exchange_price ?? input.preco_troca ?? null,
+    full_price: input.full_price ?? input.preco_completa ?? null,
+    cost_price: input.cost_price ?? input.preco_custo ?? null,
+    movement_type: input.movement_type ?? null,
+    return_product_id: input.return_product_id ?? input.returnableId ?? input.linkedProductId ?? null,
+    track_stock: input.track_stock ?? input.trackStock ?? input.controls_stock ?? null,
+    is_active: input.is_active ?? input.ativo ?? true,
+    deposit_id: input.deposit_id ?? input.depositId ?? null,
+    product_group: input.product_group ?? input.productGroup ?? null,
+    image_url: input.image_url ?? input.imageUrl ?? null,
+  };
+
+  return payload;
+};
+
+// Versão para updates (só inclui campos presentes)
+const normalizeProductUpdate = (updates: any): ProductUpdate => {
+  const normalized: ProductUpdate = {};
+
+  if ('id' in updates) normalized.id = updates.id;
+  if ('code' in updates || 'codigo' in updates) normalized.code = updates.code ?? updates.codigo ?? null;
+  if ('name' in updates || 'nome' in updates) normalized.name = updates.name ?? updates.nome ?? null;
+  if ('description' in updates || 'descricao' in updates) normalized.description = updates.description ?? updates.descricao ?? null;
+  if ('type' in updates || 'tipo' in updates) normalized.type = updates.type ?? updates.tipo ?? null;
+  if ('unit' in updates || 'unidade' in updates) normalized.unit = updates.unit ?? updates.unidade ?? null;
+  if ('sale_price' in updates || 'preco_venda' in updates) normalized.sale_price = updates.sale_price ?? updates.preco_venda ?? null;
+  if ('exchange_price' in updates || 'preco_troca' in updates) normalized.exchange_price = updates.exchange_price ?? updates.preco_troca ?? null;
+  if ('full_price' in updates || 'preco_completa' in updates) normalized.full_price = updates.full_price ?? updates.preco_completa ?? null;
+  if ('cost_price' in updates || 'preco_custo' in updates) normalized.cost_price = updates.cost_price ?? updates.preco_custo ?? null;
+  if ('movement_type' in updates) normalized.movement_type = updates.movement_type;
+  if ('return_product_id' in updates || 'returnableId' in updates || 'linkedProductId' in updates) {
+    normalized.return_product_id = updates.return_product_id ?? updates.returnableId ?? updates.linkedProductId ?? null;
+  }
+  if ('track_stock' in updates || 'trackStock' in updates || 'controls_stock' in updates) {
+    normalized.track_stock = updates.track_stock ?? updates.trackStock ?? updates.controls_stock ?? null;
+  }
+  if ('is_active' in updates || 'ativo' in updates) normalized.is_active = updates.is_active ?? updates.ativo ?? null;
+  if ('deposit_id' in updates || 'depositId' in updates) normalized.deposit_id = updates.deposit_id ?? updates.depositId ?? null;
+  if ('product_group' in updates || 'productGroup' in updates) normalized.product_group = updates.product_group ?? updates.productGroup ?? null;
+  if ('image_url' in updates || 'imageUrl' in updates) normalized.image_url = updates.image_url ?? updates.imageUrl ?? null;
+
+  return normalized;
+};
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
 export const productService = {
-  /**
-   * 1. Listar todos os produtos ativos
-   */
+  // 1. Listar todos os produtos ativos
   async getAll(): Promise<Product[]> {
     const { data, error } = await supabase
       .from('products')
       .select('*')
       .eq('is_active', true)
       .order('name');
-    
+
     if (error) throw new Error(`Erro ao listar produtos: ${error.message}`);
     return data || [];
   },
 
-  /**
-   * 2. Listar produtos por depósito (com preços específicos)
-   */
+  // 2. Listar produtos por depósito (usando deposit_id direto)
   async getByDeposit(depositId: string): Promise<Product[]> {
     const { data, error } = await supabase
       .from('products')
-      .select(`
-        *,
-        product_pricing!inner(
-          sale_price,
-          exchange_price,
-          full_price
-        )
-      `)
+      .select('*')
       .eq('is_active', true)
-      .eq('product_pricing.deposit_id', depositId)
+      .eq('deposit_id', depositId)
       .order('name');
-    
+
     if (error) throw new Error(`Erro ao listar produtos do depósito: ${error.message}`);
     return data || [];
   },
@@ -65,7 +123,9 @@ export const productService = {
       .from('products')
       .select('*')
       .eq('id', id)
-      .single();
+      .order('deposit_id', { nullsFirst: true })
+      .limit(1)
+      .maybeSingle();
     
     if (error) {
       if (error.code === 'PGRST116') return null;
@@ -79,23 +139,20 @@ export const productService = {
    * 
    * ⚠️ VALIDAÇÕES IMPORTANTES:
    * - Se movement_type = 'EXCHANGE', DEVE ter return_product_id
-   * - Se movement_type = 'EXCHANGE', DEVE ter exchange_price e full_price
    * - Se movement_type = 'SIMPLE', return_product_id DEVE ser null
+   * - Preços de venda são definidos por depósito na tabela product_pricing
    */
   async create(product: NewProduct): Promise<Product> {
+    const payload = normalizeProductPayload(product);
+
     // Validação de regras de negócio
-    if (product.movement_type === 'EXCHANGE') {
-      if (!product.return_product_id) {
-        throw new Error('Produtos com movimento EXCHANGE devem ter produto de retorno vinculado');
-      }
-      if (!product.exchange_price || !product.full_price) {
-        throw new Error('Produtos com movimento EXCHANGE devem ter exchange_price e full_price');
-      }
+    if (payload.movement_type === 'EXCHANGE' && !payload.return_product_id) {
+      throw new Error('Produtos com movimento EXCHANGE devem ter produto de retorno vinculado');
     }
 
     const { data, error } = await supabase
       .from('products')
-      .insert([product]) // Inserir como array
+      .insert([payload]) // Inserir como array
       .select()
       .single();
 
@@ -113,9 +170,11 @@ export const productService = {
    * 5. Atualizar produto
    */
   async update(id: string, updates: UpdateProduct): Promise<Product> {
+    const normalized = normalizeProductUpdate(updates);
+
     const { data, error } = await supabase
       .from('products')
-      .update(updates)
+      .update(normalized)
       .eq('id', id)
       .select()
       .single();
@@ -172,18 +231,28 @@ export const productService = {
    */
   async getPricing(productId: string, depositId: string): Promise<ProductPricing | null> {
     const { data, error } = await supabase
-      .from('product_pricing')
-      .select('*')
-      .eq('product_id', productId)
+      .from('products')
+      .select('id, deposit_id, sale_price, exchange_price, full_price')
+      .eq('id', productId)
       .eq('deposit_id', depositId)
-      .eq('is_active', true)
-      .single();
-    
+      .limit(1)
+      .maybeSingle();
+
     if (error) {
       if (error.code === 'PGRST116') return null;
       throw new Error(`Erro ao buscar preço: ${error.message}`);
     }
-    return data;
+
+    if (!data) return null;
+
+    return {
+      product_id: data.id,
+      deposit_id: data.deposit_id,
+      price: data.sale_price ?? 0,
+      sale_price: data.sale_price,
+      exchange_price: data.exchange_price,
+      full_price: data.full_price,
+    };
   },
 
   /**
@@ -193,58 +262,198 @@ export const productService = {
     productId: string,
     depositId: string,
     pricing: {
-      sale_price: number;
+      price?: number;
+      sale_price?: number | null;
       exchange_price?: number | null;
       full_price?: number | null;
     }
   ): Promise<ProductPricing> {
-    // Upsert (insert ou update se já existir)
-    const { data, error } = await supabase
-      .from('product_pricing')
-      .upsert([{
-        product_id: productId,
-        deposit_id: depositId,
-        ...pricing,
-        is_active: true
-      }]) // Inserir como array
-      .select()
+    const buildPriceUpdates = (payload: typeof pricing): ProductUpdate => {
+      const updates: ProductUpdate = {};
+
+      if ('sale_price' in payload || 'price' in payload) {
+        updates.sale_price = payload.sale_price ?? payload.price ?? null;
+      }
+      if ('exchange_price' in payload) {
+        updates.exchange_price = payload.exchange_price ?? null;
+      }
+      if ('full_price' in payload) {
+        updates.full_price = payload.full_price ?? null;
+      }
+
+      return updates;
+    };
+
+    // 1. Buscar o produto original pelo ID
+    const { data: originalProduct, error: fetchError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', productId)
       .single();
 
-    if (error) throw new Error(`Erro ao definir preço: ${error.message}`);
-    return data;
+    if (fetchError || !originalProduct) {
+      throw new Error('Produto original não encontrado para precificação');
+    }
+
+    // Se não há depósito (contexto global), atualiza o próprio produto
+    if (!depositId) {
+      const updates = buildPriceUpdates(pricing);
+      const { data, error } = await supabase
+        .from('products')
+        .update(updates)
+        .eq('id', productId)
+        .select('id, deposit_id, sale_price, exchange_price, full_price')
+        .single();
+
+      if (error) throw new Error(`Erro ao atualizar preço global: ${error.message}`);
+
+      return {
+        product_id: data.id,
+        deposit_id: data.deposit_id,
+        price: data.sale_price ?? 0,
+        sale_price: data.sale_price,
+        exchange_price: data.exchange_price,
+        full_price: data.full_price,
+      };
+    }
+
+    // 2. Verificar se já existe um produto nesse depósito (usa nome + depósito, tolerando duplicados)
+    let existingDepositProduct: Product | null = null;
+
+    if (originalProduct.deposit_id === depositId) {
+      existingDepositProduct = originalProduct as Product;
+    } else {
+      const { data: found, error: existingError } = await supabase
+        .from('products')
+        .select('*')
+        .eq('name', originalProduct.name)
+        .eq('deposit_id', depositId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingError && existingError.code !== 'PGRST116') {
+        throw new Error(`Erro ao verificar produto do depósito: ${existingError.message}`);
+      }
+      existingDepositProduct = found || null;
+    }
+
+    const updates = buildPriceUpdates(pricing);
+    let finalProduct: Product;
+
+    if (existingDepositProduct) {
+      // Passo B: UPDATE no produto específico do depósito
+      const { data: updated, error: updateError } = await supabase
+        .from('products')
+        .update(updates)
+        .eq('id', existingDepositProduct.id)
+        .select('id, deposit_id, sale_price, exchange_price, full_price')
+        .single();
+
+      if (updateError) throw new Error(`Erro ao atualizar preço do depósito: ${updateError.message}`);
+      finalProduct = updated as Product;
+    } else {
+      // Passo C: INSERT (clone) do produto global para o depósito
+      const { id, created_at, updated_at, ...productData } = originalProduct as any;
+
+      const clone: ProductInsert = {
+        ...productData,
+        deposit_id: depositId,
+        ...updates,
+      };
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('products')
+        .insert([clone])
+        .select('id, deposit_id, sale_price, exchange_price, full_price')
+        .single();
+
+      if (insertError) throw new Error(`Erro ao criar entrada de preço para o depósito: ${insertError.message}`);
+      finalProduct = inserted as Product;
+    }
+
+    return {
+      product_id: finalProduct.id,
+      deposit_id: finalProduct.deposit_id,
+      price: finalProduct.sale_price ?? 0,
+      sale_price: finalProduct.sale_price,
+      exchange_price: finalProduct.exchange_price,
+      full_price: finalProduct.full_price,
+    };
   },
 
   /**
    * 11. Obter preço final considerando modalidade de venda
    * 
    * Lógica:
-   * - Se sale_movement_type = 'EXCHANGE' → usa exchange_price
-   * - Se sale_movement_type = 'FULL' → usa full_price
-   * - Se sale_movement_type = 'SIMPLE' ou null → usa sale_price
+   * 1. Busca preço específico do depósito (product_pricing.price)
+   * 2. Fallback: usa preço do produto baseado na modalidade
+   *    - EXCHANGE → preco_troca/exchange_price
+   *    - FULL → preco_completa/full_price  
+   *    - SIMPLE → preco_venda/sale_price
    */
   async getFinalPrice(
     productId: string,
     depositId: string,
     saleMovementType: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null
   ): Promise<number> {
-    const pricing = await this.getPricing(productId, depositId);
-    
-    if (!pricing) {
-      // Fallback: buscar preço do produto (campo sale_price)
-      const product = await this.getById(productId);
-      if (!product) throw new Error('Produto não encontrado');
-      return product.sale_price;
+    const { data: depRow, error: depError } = await supabase
+      .from('products')
+      .select('sale_price, exchange_price, full_price, id')
+      .eq('id', productId)
+      .eq('deposit_id', depositId)
+      .limit(1)
+      .maybeSingle();
+
+    if (depError && depError.code !== 'PGRST116') {
+      throw new Error(`Erro ao buscar preço do depósito: ${depError.message}`);
     }
 
-    // Seleciona preço baseado na modalidade
+    const baseProduct = depRow ? depRow : await this.getById(productId);
+    if (!baseProduct) throw new Error('Produto não encontrado');
+
     switch (saleMovementType) {
       case 'EXCHANGE':
-        return pricing.exchange_price || pricing.sale_price;
+        return (baseProduct as any).exchange_price ?? (baseProduct as any).sale_price ?? 0;
       case 'FULL':
-        return pricing.full_price || pricing.sale_price;
+        return (baseProduct as any).full_price ?? (baseProduct as any).sale_price ?? 0;
       default:
-        return pricing.sale_price;
+        return (baseProduct as any).sale_price ?? 0;
     }
+  },
+
+  /**
+   * 12. Listar todas as precificações ativas de um produto (por depósito)
+   */
+  async listPricingByProduct(productId: string): Promise<ProductPricing[]> {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, deposit_id, sale_price, exchange_price, full_price')
+      .eq('id', productId);
+
+    if (error) throw new Error(`Erro ao listar preços do produto: ${error.message}`);
+
+    return (data || []).map(row => ({
+      product_id: row.id,
+      deposit_id: row.deposit_id,
+      price: row.sale_price ?? 0,
+      sale_price: row.sale_price,
+      exchange_price: row.exchange_price,
+      full_price: row.full_price,
+    }));
+  },
+
+  /**
+   * 13. Remover (apagar) precificação específica de um depósito
+   */
+  async removePricing(productId: string, depositId: string): Promise<void> {
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', productId)
+      .eq('deposit_id', depositId);
+
+    if (error) throw new Error(`Erro ao remover preço do depósito: ${error.message}`);
   },
 
   // ==================== FILTROS E BUSCAS ====================
@@ -298,41 +507,14 @@ export const productService = {
    * Funções auxiliares para manipulação direta com validação de tipos
    */
   async createProduct(product: ProductInsert) {
-    const validatedProduct: ProductInsert = {
-      ...product,
-    };
-    // Evita enviar colunas que não existem no schema do Supabase
-    // (alguns componentes legados ainda montam esses campos)
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedProduct as any).current_stock;
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedProduct as any).min_stock;
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedProduct as any).markup;
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedProduct as any).tracks_empties;
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedProduct as any).is_delivery_fee;
-    const { data, error } = await supabase.from('products').insert([validatedProduct]); // Inserir como array
+    const validatedProduct = normalizeProductPayload(product);
+    const { data, error } = await supabase.from('products').insert([validatedProduct]);
     if (error) throw error;
     return data;
   },
 
   async updateProduct(id: string, updates: ProductUpdate) {
-    const validatedUpdates: ProductUpdate = {
-      ...updates,
-    };
-    // Evita enviar colunas que não existem no schema do Supabase
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedUpdates as any).current_stock;
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedUpdates as any).min_stock;
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedUpdates as any).markup;
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedUpdates as any).tracks_empties;
-    // @ts-expect-error - limpeza defensiva em runtime
-    delete (validatedUpdates as any).is_delivery_fee;
+    const validatedUpdates = normalizeProductUpdate(updates);
     const { data, error } = await supabase.from('products').update(validatedUpdates).eq('id', id);
     if (error) throw error;
     return data;
@@ -345,11 +527,7 @@ export const productService = {
   },
 
   async upsertProductPricing(pricing: ProductPricingInsert) {
-    const validatedPricing: ProductPricingInsert = {
-      ...pricing,
-    };
-    const { data, error } = await supabase.from('product_pricing').upsert([validatedPricing]); // Inserir como array
-    if (error) throw error;
-    return data;
+    // Compatibilidade: mantém assinatura, mas usa tabela products + deposit_id
+    return await this.setPricing(pricing.product_id, pricing.deposit_id, { sale_price: pricing.price });
   }
 };

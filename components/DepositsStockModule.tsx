@@ -10,7 +10,7 @@ import {
   upsertDeposit, deleteDeposit, listDeposits, applyMovement,
   useLiveQuery, db,
 } from '@/utils/legacyHelpers';
-import { employeeService } from '@/services';
+import { employeeService, productService, type ProductPricing as ProductPricingRow } from '@/services';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -55,6 +55,8 @@ interface ProductForm {
   return_product_id?: string | null;
   preco_venda: number;
   preco_custo: number;
+   preco_troca?: number | null;
+   preco_completa?: number | null;
   track_stock: boolean;
   ativo: boolean;
 }
@@ -80,6 +82,8 @@ const EMPTY_PRODUCT_FORM: ProductForm = {
   return_product_id: null,
   preco_venda: 0,
   preco_custo: 0,
+   preco_troca: null,
+   preco_completa: null,
   track_stock: true,
   ativo: true,
 };
@@ -96,6 +100,10 @@ const MOVEMENT_TYPES = [
   { value: 'EXCHANGE', label: 'Troca', desc: 'Cliente devolve vazio e leva cheio', icon: Repeat },
   { value: 'FULL', label: 'Completa', desc: 'Vende produto + casco (cliente novo)', icon: Package },
 ];
+
+type PricingForm = {
+  price: number | '';
+};
 
 const PRESET_COLORS = [
   '#6366f1', // Indigo
@@ -130,6 +138,9 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   const [savingProduct, setSavingProduct] = useState(false);
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [deleteProductModal, setDeleteProductModal] = useState<Product | null>(null);
+  const [pricingByDeposit, setPricingByDeposit] = useState<Record<string, PricingForm>>({});
+  const [existingPricingDeposits, setExistingPricingDeposits] = useState<Set<string>>(new Set());
+  const [pricingLoading, setPricingLoading] = useState(false);
   
   // Transfer state
   const [transferForm, setTransferForm] = useState<TransferForm>({
@@ -242,9 +253,15 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   }, [allProducts, productSearchTerm]);
 
   // Produtos vazios disponíveis para vínculo (EXCHANGE)
-  const emptyProducts = useMemo(() => 
-    allProducts.filter(p => p.tipo === 'VASILHAME_VAZIO' && p.ativo !== false),
-  [allProducts]);
+  // Filtra por tipo em português (tipo) ou inglês (type)
+  const emptyProducts = useMemo(() => {
+    const result = allProducts.filter(p => {
+      const tipo = p.tipo || (p as any).type || '';
+      return (tipo === 'VASILHAME_VAZIO' || tipo === 'EMPTY_CONTAINER') && p.ativo !== false;
+    });
+    console.log('[emptyProducts] Produtos vazios encontrados:', result.length, result.map(p => ({ id: p.id, nome: p.nome, tipo: p.tipo })));
+    return result;
+  }, [allProducts]);
 
   // Stock map: { depositId: { productId: qty } }
   const stockMap = useMemo(() => {
@@ -257,6 +274,108 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     });
     return map;
   }, [stockBalance]);
+
+  // -------------------------------------------------------------------------
+  // HELPERS - PRECIFICAÇÃO POR DEPÓSITO
+  // -------------------------------------------------------------------------
+  const normalizeMoney = useCallback((value: number | string | null | undefined) => {
+    if (value === '' || value === null || value === undefined) return 0;
+    const parsed = typeof value === 'string' ? Number(value) : Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }, []);
+
+  const getBasePricingFromForm = useCallback((base?: Partial<ProductForm>): PricingForm => {
+    const src = base ?? productForm;
+    const basePrice = normalizeMoney(src.preco_venda ?? 0);
+    return { price: basePrice };
+  }, [normalizeMoney, productForm]);
+
+  const hydratePricingState = useCallback((rows?: ProductPricingRow[], base?: Partial<ProductForm>) => {
+    const defaults = getBasePricingFromForm(base);
+    const existing = new Set<string>();
+    const next: Record<string, PricingForm> = {};
+
+    activeDeposits.forEach(dep => {
+      const row = rows?.find(r => (r as any).deposit_id === dep.id);
+      if (row) {
+        existing.add(dep.id);
+        next[dep.id] = {
+          price: normalizeMoney((row as any).price ?? 0),
+        };
+      } else {
+        next[dep.id] = { ...defaults };
+      }
+    });
+
+    setExistingPricingDeposits(existing);
+    setPricingByDeposit(next);
+  }, [activeDeposits, getBasePricingFromForm, normalizeMoney]);
+
+  const loadPricingForProduct = useCallback(async (productId: string, base: ProductForm) => {
+    setPricingLoading(true);
+    try {
+      const pricingRows = await productService.listPricingByProduct(productId);
+      hydratePricingState(pricingRows, base);
+    } catch (error) {
+      console.error('Erro ao carregar precificação por depósito', error);
+      toast.error('Não foi possível carregar preços por depósito');
+      hydratePricingState(undefined, base);
+    } finally {
+      setPricingLoading(false);
+    }
+  }, [hydratePricingState]);
+
+  const handlePricingInput = useCallback((depositId: string, field: keyof PricingForm, rawValue: string) => {
+    setPricingByDeposit(prev => {
+      const current = prev[depositId] || getBasePricingFromForm();
+      const parsed = rawValue === '' ? '' : normalizeMoney(rawValue.replace(',', '.'));
+      return {
+        ...prev,
+        [depositId]: {
+          ...current,
+          [field]: parsed,
+        },
+      };
+    });
+  }, [getBasePricingFromForm, normalizeMoney]);
+
+  const persistPricing = useCallback(async (productId: string, movement: StockMovementRule) => {
+    const tasks = activeDeposits.map(async (dep) => {
+      const pricing = pricingByDeposit[dep.id];
+      if (!pricing) return null;
+
+      const priceValue = normalizeMoney(pricing.price);
+
+      // Se não houver preço informado, apaga entrada existente
+      if (!priceValue || Number.isNaN(priceValue)) {
+        if (existingPricingDeposits.has(dep.id)) {
+          await productService.removePricing(productId, dep.id);
+        }
+        return null;
+      }
+
+      await productService.setPricing(productId, dep.id, {
+        price: priceValue,
+      });
+      return true;
+    });
+
+    await Promise.all(tasks);
+  }, [activeDeposits, existingPricingDeposits, normalizeMoney, pricingByDeposit]);
+
+  // Sincroniza estado de precificação quando o tipo de movimento muda
+  useEffect(() => {
+    if (!isEditingProduct) return;
+    // Não precisa mais limpar campos - agora é só 'price'
+  }, [isEditingProduct, productForm.movement_type]);
+
+  // Garante que ao carregar depósitos o mapa de preços seja preenchido
+  useEffect(() => {
+    if (!isEditingProduct) return;
+    if (!activeDeposits.length) return;
+    if (Object.keys(pricingByDeposit).length > 0) return;
+    hydratePricingState(undefined, productForm);
+  }, [activeDeposits, hydratePricingState, isEditingProduct, pricingByDeposit, productForm]);
 
   // -------------------------------------------------------------------------
   // HANDLERS - CADASTRO
@@ -420,27 +539,61 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   const handleNewProduct = () => {
     setProductForm(EMPTY_PRODUCT_FORM);
     setIsEditingProduct(true);
+    setExistingPricingDeposits(new Set());
+    hydratePricingState(undefined, EMPTY_PRODUCT_FORM);
   };
 
   const handleEditProduct = (product: Product) => {
-    setProductForm({
+    // Extrair preços corretamente (podem vir em diferentes formatos)
+    const precoVenda = Number(product.preco_venda ?? (product as any).sale_price ?? 0) || 0;
+    const precoCusto = Number(product.preco_custo ?? (product as any).cost_price ?? 0) || 0;
+    const precoTroca = (product as any).preco_troca ?? (product as any).exchange_price;
+    const precoCompleta = (product as any).preco_completa ?? (product as any).full_price;
+    
+    // Preservar return_product_id explicitamente
+    const returnProductId = product.return_product_id ?? (product as any).returnProductId ?? null;
+    
+    console.log('[handleEditProduct] Carregando produto:', {
+      id: product.id,
+      nome: product.nome,
+      movement_type: product.movement_type,
+      return_product_id: returnProductId,
+      precoVenda,
+      precoTroca,
+      precoCompleta,
+      rawProduct: product,
+    });
+    
+    // Verificar se o vasilhame vazio existe na lista
+    if (returnProductId) {
+      const foundEmpty = allProducts.find(p => p.id === returnProductId);
+      console.log('[handleEditProduct] Vasilhame vazio vinculado encontrado:', foundEmpty ? `${foundEmpty.nome} (${foundEmpty.id})` : 'NÃO ENCONTRADO!');
+    }
+    
+    const formData: ProductForm = {
       id: product.id,
       codigo: product.codigo || '',
       nome: product.nome || '',
       tipo: (product.tipo as ProductForm['tipo']) || 'OUTROS',
       movement_type: (product.movement_type as StockMovementRule) || 'SIMPLE',
-      return_product_id: product.return_product_id || null,
-      preco_venda: product.preco_venda || 0,
-      preco_custo: product.preco_custo || 0,
+      return_product_id: returnProductId,
+      preco_venda: precoVenda,
+      preco_custo: precoCusto,
+      preco_troca: precoTroca != null ? Number(precoTroca) : null,
+      preco_completa: precoCompleta != null ? Number(precoCompleta) : null,
       track_stock: product.track_stock ?? true,
       ativo: product.ativo ?? true,
-    });
+    };
+    setProductForm(formData);
     setIsEditingProduct(true);
+    loadPricingForProduct(product.id, formData);
   };
 
   const handleCancelProductEdit = () => {
     setProductForm(EMPTY_PRODUCT_FORM);
     setIsEditingProduct(false);
+    setPricingByDeposit({});
+    setExistingPricingDeposits(new Set());
   };
 
   const handleSaveProduct = async () => {
@@ -457,6 +610,38 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
 
     setSavingProduct(true);
     try {
+      // Preço de venda base (sempre usar preco_venda como referência principal)
+      const baseSalePrice = normalizeMoney(productForm.preco_venda);
+      const costValue = normalizeMoney(productForm.preco_custo);
+      
+      // Preços específicos para EXCHANGE - SÓ salvar se foram preenchidos
+      let precoTroca = null;
+      let precoCompleta = null;
+      
+      if (productForm.movement_type === 'EXCHANGE') {
+        // Se preço_troca foi preenchido, usar esse valor; caso contrário, usar preco_venda
+        precoTroca = productForm.preco_troca != null 
+          ? normalizeMoney(productForm.preco_troca)
+          : normalizeMoney(baseSalePrice);
+        
+        // Se preço_completa foi preenchido, usar esse valor; caso contrário, usar preco_venda
+        precoCompleta = productForm.preco_completa != null 
+          ? normalizeMoney(productForm.preco_completa)
+          : normalizeMoney(baseSalePrice);
+      }
+      
+      console.log('[handleSaveProduct] Salvando produto:', {
+        id: productForm.id,
+        nome: productForm.nome,
+        movement_type: productForm.movement_type,
+        return_product_id: productForm.return_product_id,
+        baseSalePrice,
+        precoTroca,
+        precoCompleta,
+        formPrecoTroca: productForm.preco_troca,
+        formPrecoCompleta: productForm.preco_completa,
+      });
+
       const productData: Product = {
         id: productForm.id || crypto.randomUUID(),
         codigo: productForm.codigo.trim() || null,
@@ -464,9 +649,11 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         tipo: productForm.tipo,
         movement_type: productForm.movement_type,
         return_product_id: productForm.movement_type === 'EXCHANGE' ? productForm.return_product_id : null,
-        preco_venda: productForm.preco_venda || 0,
-        preco_custo: productForm.preco_custo || 0,
-        preco_padrao: productForm.preco_venda || 0,
+        preco_venda: baseSalePrice,
+        preco_custo: costValue,
+        preco_padrao: baseSalePrice,
+        preco_troca: precoTroca,
+        preco_completa: precoCompleta,
         track_stock: productForm.track_stock,
         ativo: productForm.ativo,
         // Campos obrigatórios com defaults
@@ -475,8 +662,8 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         product_group: null,
         imagem_url: null,
         deposit_id: null,
-        marcacao: productForm.preco_custo > 0 
-          ? ((productForm.preco_venda - productForm.preco_custo) / productForm.preco_custo) * 100 
+        marcacao: costValue > 0 
+          ? ((baseSalePrice - costValue) / costValue) * 100 
           : 0,
         tracks_empties: productForm.tipo === 'GAS_CHEIO' || productForm.movement_type === 'EXCHANGE',
         created_at: productForm.id ? undefined : new Date().toISOString(),
@@ -484,6 +671,10 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       };
 
       await db.products.put(productData);
+
+      if (productData.track_stock !== false) {
+        await persistPricing(productData.id, productData.movement_type as StockMovementRule);
+      }
       
       // Se criou um produto tipo GAS_CHEIO com EXCHANGE, criar automaticamente o vazio se não existir
       if (!productForm.id && productForm.tipo === 'GAS_CHEIO' && productForm.movement_type === 'EXCHANGE' && !productForm.return_product_id) {
@@ -516,10 +707,12 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
 
       setProductForm(EMPTY_PRODUCT_FORM);
       setIsEditingProduct(false);
-      alert('Produto salvo com sucesso!');
+      setPricingByDeposit({});
+      setExistingPricingDeposits(new Set());
+      toast.success('Produto salvo com sucesso!');
     } catch (error) {
       console.error('Erro ao salvar produto:', error);
-      alert('Erro ao salvar produto. Tente novamente.');
+      toast.error('Erro ao salvar produto. Tente novamente.');
     } finally {
       setSavingProduct(false);
     }
@@ -1369,9 +1562,28 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className="font-bold text-green-500">
-                              R$ {(product.preco_venda || 0).toFixed(2)}
-                            </div>
+                            {product.movement_type === 'EXCHANGE' ? (
+                              // Produto com 2 modalidades de venda (Troca/Completa)
+                              <div className="space-y-0.5">
+                                <div className="flex items-center justify-end gap-2">
+                                  <span className="text-[10px] text-yellow-400 font-bold bg-yellow-500/10 px-1.5 py-0.5 rounded">TROCA</span>
+                                  <span className="font-bold text-green-500">
+                                    R$ {(product.preco_troca ?? product.preco_venda ?? 0).toFixed(2)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-end gap-2">
+                                  <span className="text-[10px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded">COMPLETA</span>
+                                  <span className="font-bold text-blue-400">
+                                    R$ {(product.preco_completa ?? product.preco_venda ?? 0).toFixed(2)}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              // Produto simples (preço único)
+                              <div className="font-bold text-green-500">
+                                R$ {(product.preco_venda || 0).toFixed(2)}
+                              </div>
+                            )}
                             {product.track_stock && (
                               <div className="text-[10px] text-txt-muted">Controla estoque</div>
                             )}
@@ -1525,148 +1737,136 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                         </div>
                       )}
 
-                      {/* Preços - Layout diferente baseado no tipo de movimento */}
-                      {productForm.movement_type !== 'EXCHANGE' && productForm.movement_type !== 'Troca' ? (
-                        /* Produto SIMPLES - Mostra Preço de Venda normal */
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-xs font-bold text-txt-muted uppercase tracking-wide mb-2">
-                              Preço de Venda (R$)
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={productForm.preco_venda || ''}
-                              onChange={e => {
-                                const val = e.target.value.replace(',', '.');
-                                if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                  setProductForm(prev => ({ ...prev, preco_venda: val === '' ? 0 : parseFloat(val) || 0 }));
-                                }
-                              }}
-                              placeholder="0.00"
-                              className="w-full px-4 py-3 bg-app border border-bdr rounded-xl focus:ring-2 focus:ring-purple-500/20 outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold text-txt-muted uppercase tracking-wide mb-2">
-                              Preço de Custo (R$)
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={productForm.preco_custo || ''}
-                              onChange={e => {
-                                const val = e.target.value.replace(',', '.');
-                                if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                  setProductForm(prev => ({ ...prev, preco_custo: val === '' ? 0 : parseFloat(val) || 0 }));
-                                }
-                              }}
-                              placeholder="0.00"
-                              className="w-full px-4 py-3 bg-app border border-bdr rounded-xl focus:ring-2 focus:ring-purple-500/20 outline-none"
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        /* Produto com TROCA - Layout especial com modalidades */
-                        <div className="space-y-4">
-                          {/* Preço de Custo sempre visível */}
-                          <div>
-                            <label className="block text-xs font-bold text-txt-muted uppercase tracking-wide mb-2">
-                              Preço de Custo (R$)
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={productForm.preco_custo || ''}
-                              onChange={e => {
-                                const val = e.target.value.replace(',', '.');
-                                if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                  setProductForm(prev => ({ ...prev, preco_custo: val === '' ? 0 : parseFloat(val) || 0 }));
-                                }
-                              }}
-                              placeholder="0.00"
-                              className="w-full px-4 py-3 bg-app border border-bdr rounded-xl focus:ring-2 focus:ring-purple-500/20 outline-none"
-                            />
-                          </div>
+                      {/* Preços por Modalidade (só aparecem se EXCHANGE) */}
+                      {productForm.movement_type === 'EXCHANGE' && (
+                        <div className="space-y-4 p-4 bg-purple-500/5 rounded-xl border border-purple-500/20">
+                          <p className="text-xs font-bold text-txt-muted uppercase">Preços Específicos por Modalidade</p>
                           
-                          {/* Preços por Modalidade de Venda */}
-                          <div className="bg-gradient-to-r from-green-500/10 to-blue-500/10 rounded-xl p-4 border border-green-500/30 space-y-4">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-lg">💰</span>
-                              <span className="font-bold text-txt-main">Preços por Modalidade de Venda</span>
-                            </div>
-                            <p className="text-xs text-txt-muted mb-3">
-                              Defina os preços para cada tipo de venda deste produto:
-                            </p>
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="bg-green-500/10 rounded-lg p-3 border border-green-500/30">
-                                <label className="block text-xs font-bold text-green-400 uppercase tracking-wide mb-2">
-                                  🔁 Preço TROCA (R$) *
-                                </label>
-                                <p className="text-[10px] text-txt-muted mb-2">Cliente devolve casco vazio</p>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={(productForm as any).preco_troca || ''}
-                                  onChange={e => {
-                                    const val = e.target.value.replace(',', '.');
-                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                      const numVal = val === '' ? null : parseFloat(val) || 0;
-                                      setProductForm(prev => ({ 
-                                        ...prev, 
-                                        preco_troca: numVal,
-                                        preco_venda: numVal ?? prev.preco_venda // Sincroniza com preco_venda como fallback
-                                      }));
-                                    }
-                                  }}
-                                  placeholder="Ex: 130.00"
-                                  className="w-full px-3 py-2 bg-app border border-green-500/30 rounded-lg focus:ring-2 focus:ring-green-500/20 outline-none text-sm"
-                                />
-                              </div>
-                              <div className="bg-blue-500/10 rounded-lg p-3 border border-blue-500/30">
-                                <label className="block text-xs font-bold text-blue-400 uppercase tracking-wide mb-2">
-                                  📦 Preço COMPLETA (R$) *
-                                </label>
-                                <p className="text-[10px] text-txt-muted mb-2">Cliente leva casco (cliente novo)</p>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={(productForm as any).preco_completa || ''}
-                                  onChange={e => {
-                                    const val = e.target.value.replace(',', '.');
-                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                      setProductForm(prev => ({ ...prev, preco_completa: val === '' ? null : parseFloat(val) || 0 }));
-                                    }
-                                  }}
-                                  placeholder="Ex: 220.00"
-                                  className="w-full px-3 py-2 bg-app border border-blue-500/30 rounded-lg focus:ring-2 focus:ring-blue-500/20 outline-none text-sm"
-                                />
-                              </div>
-                            </div>
-                            <p className="text-[10px] text-amber-400 font-semibold">
-                              ⚠️ Preço COMPLETA = Preço TROCA + Valor do Casco (vasilhame vazio)
-                            </p>
+                          {/* Preço TROCA (cliente devolve casco) */}
+                          <div>
+                            <label className="block text-xs font-bold text-yellow-400 uppercase tracking-wide mb-2">
+                              <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full mr-1" />
+                              Preço TROCA (Cliente devolve casco) - R$
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={productForm.preco_troca || ''}
+                              onChange={e => {
+                                const val = e.target.value.replace(',', '.');
+                                if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                  setProductForm(prev => ({ ...prev, preco_troca: val === '' ? null : parseFloat(val) || null }));
+                                }
+                              }}
+                              placeholder="0.00"
+                              className="w-full px-4 py-3 bg-app border border-bdr rounded-xl focus:ring-2 focus:ring-yellow-500/20 outline-none"
+                            />
+                            <p className="text-[10px] text-txt-muted mt-1">Preço cobrado quando cliente devolve o vasilhame vazio</p>
+                          </div>
+
+                          {/* Preço COMPLETA (cliente leva casco novo) */}
+                          <div>
+                            <label className="block text-xs font-bold text-blue-400 uppercase tracking-wide mb-2">
+                              <span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1" />
+                              Preço COMPLETA (Cliente leva casco novo) - R$
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={productForm.preco_completa || ''}
+                              onChange={e => {
+                                const val = e.target.value.replace(',', '.');
+                                if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                  setProductForm(prev => ({ ...prev, preco_completa: val === '' ? null : parseFloat(val) || null }));
+                                }
+                              }}
+                              placeholder="0.00"
+                              className="w-full px-4 py-3 bg-app border border-bdr rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
+                            />
+                            <p className="text-[10px] text-txt-muted mt-1">Preço cobrado quando cliente leva o vasilhame cheio (sem devolução)</p>
                           </div>
                         </div>
                       )}
 
-                      {/* Margem calculada - Para EXCHANGE usa preco_troca, senão preco_venda */}
-                      {productForm.preco_custo > 0 && (
+                      {/* Preço de Custo - Campo global do produto */}
+                      <div>
+                        <label className="block text-xs font-bold text-txt-muted uppercase tracking-wide mb-2">
+                          Preço de Custo (R$)
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={productForm.preco_custo || ''}
+                          onChange={e => {
+                            const val = e.target.value.replace(',', '.');
+                            if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                              setProductForm(prev => ({ ...prev, preco_custo: val === '' ? 0 : parseFloat(val) || 0 }));
+                            }
+                          }}
+                          placeholder="0.00"
+                          className="w-full px-4 py-3 bg-app border border-bdr rounded-xl focus:ring-2 focus:ring-purple-500/20 outline-none"
+                        />
+                        <p className="text-[10px] text-txt-muted mt-1">Custo de aquisição do produto (valor global)</p>
+                      </div>
+
+                      {/* Margem calculada baseada no primeiro depósito com preço */}
+                      {productForm.preco_custo > 0 && Object.values(pricingByDeposit).some(p => typeof p.price === 'number' && p.price > 0) && (
                         <div className="bg-app rounded-xl p-4 border border-bdr">
-                          <div className="text-xs text-txt-muted uppercase tracking-wide mb-1">Margem de Lucro</div>
+                          <div className="text-xs text-txt-muted uppercase tracking-wide mb-1">Margem de Lucro (estimada)</div>
                           <div className="text-2xl font-black text-green-500">
                             {(() => {
-                              const precoRef = (productForm.movement_type === 'EXCHANGE' || productForm.movement_type === 'Troca')
-                                ? ((productForm as any).preco_troca || productForm.preco_venda || 0)
-                                : (productForm.preco_venda || 0);
-                              return (((precoRef - productForm.preco_custo) / productForm.preco_custo) * 100).toFixed(1);
+                              const firstPrice = Object.values(pricingByDeposit).find(p => typeof p.price === 'number' && p.price > 0)?.price as number;
+                              return (((firstPrice - productForm.preco_custo) / productForm.preco_custo) * 100).toFixed(1);
                             })()}%
                           </div>
-                          {(productForm.movement_type === 'EXCHANGE' || productForm.movement_type === 'Troca') && (
-                            <p className="text-[10px] text-txt-muted mt-1">Baseado no Preço de TROCA</p>
-                          )}
+                          <p className="text-[10px] text-txt-muted mt-1">Baseado no primeiro depósito com preço</p>
                         </div>
                       )}
+
+                      {/* Preços por Depósito */}
+                      <div className="space-y-3 border-t border-bdr pt-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-[10px] font-black text-txt-muted uppercase">Preços por Depósito</p>
+                            <p className="text-xs text-txt-muted">Cada depósito pode ter um preço diferente.</p>
+                          </div>
+                          {pricingLoading && <Loader2 className="w-4 h-4 text-purple-500 animate-spin" />}
+                        </div>
+
+                        {activeDeposits.length === 0 ? (
+                          <p className="text-xs text-txt-muted">Cadastre ao menos um depósito para definir preços.</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {activeDeposits.map((dep: Deposit) => {
+                              const pricing = pricingByDeposit[dep.id] || getBasePricingFromForm();
+
+                              return (
+                                <div key={dep.id} className="p-4 rounded-xl border border-bdr bg-app">
+                                  <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-2 min-w-[140px]">
+                                      <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: dep.cor || '#8b5cf6' }} />
+                                      <p className="font-bold text-txt-main text-sm">{dep.nome}</p>
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">R$</span>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          value={pricing.price === '' ? '' : pricing.price}
+                                          onChange={(e) => handlePricingInput(dep.id, 'price', e.target.value)}
+                                          className="w-full bg-white text-slate-900 border-2 border-amber-200 rounded-xl p-3 pl-10 text-sm font-bold outline-none"
+                                          placeholder="0.00"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
 
                       {/* Opções */}
                       <div className="space-y-3">

@@ -108,26 +108,34 @@ export const db: any = {
   products: { 
     toArray: async () => {
       const { data } = await supabase.from('products').select('*');
-      const mapped = (data || []).map((p: any) => ({
-        id: p.id,
-        codigo: p.code || p.codigo || '',
-        nome: p.name || p.nome || '',
-        descricao: p.description,
-        tipo: p.type,
-        unidade: p.unit,
-        preco_venda: p.sale_price,
-        preco_custo: p.cost_price,
-        preco_troca: p.exchange_price,
-        preco_completa: p.full_price,
-        movement_type: p.movement_type,
-        return_product_id: p.return_product_id,
-        track_stock: p.track_stock,
-        ativo: p.is_active ?? p.active,
-        depositoId: p.deposit_id,
-        product_group: p.product_group,
-        image_url: p.image_url,
-        is_delivery_fee: p.is_delivery_fee,
-      }));
+      const mapped = (data || []).map((p: any) => {
+        // Normalizar tipo: EMPTY_CONTAINER → VASILHAME_VAZIO, etc.
+        let tipo = p.type;
+        if (tipo === 'EMPTY_CONTAINER') tipo = 'VASILHAME_VAZIO';
+        else if (tipo === 'FILLED_GAS') tipo = 'GAS_CHEIO';
+        else if (tipo === 'OTHER' || tipo === 'OTHERS') tipo = 'OUTROS';
+        
+        return {
+          id: p.id,
+          codigo: p.code || p.codigo || '',
+          nome: p.name || p.nome || '',
+          descricao: p.description,
+          tipo,
+          unidade: p.unit,
+          preco_venda: p.sale_price,
+          preco_custo: p.cost_price,
+          preco_troca: p.exchange_price,
+          preco_completa: p.full_price,
+          movement_type: p.movement_type,
+          return_product_id: p.return_product_id,
+          track_stock: p.track_stock,
+          ativo: p.is_active ?? p.active,
+          depositoId: p.deposit_id,
+          product_group: p.product_group,
+          image_url: p.image_url,
+          is_delivery_fee: p.is_delivery_fee,
+        };
+      });
       return mapped;
     },
     filter: (predicate?: (p: any) => boolean) => ({
@@ -139,12 +147,19 @@ export const db: any = {
     get: async (id: string) => {
       const { data } = await supabase.from('products').select('*').eq('id', id).single();
       if (!data) return null;
+      
+      // Normalizar tipo: EMPTY_CONTAINER → VASILHAME_VAZIO, etc.
+      let tipo = data.type;
+      if (tipo === 'EMPTY_CONTAINER') tipo = 'VASILHAME_VAZIO';
+      else if (tipo === 'FILLED_GAS') tipo = 'GAS_CHEIO';
+      else if (tipo === 'OTHER' || tipo === 'OTHERS') tipo = 'OUTROS';
+      
       return {
         id: data.id,
         codigo: data.code || data.codigo || '',
         nome: data.name || data.nome || '',
         descricao: data.description,
-        tipo: data.type,
+        tipo,
         unidade: data.unit,
         preco_venda: data.sale_price,
         preco_custo: data.cost_price,
@@ -162,12 +177,18 @@ export const db: any = {
     },
     put: async (product: any) => {
       // Convert PT→EN antes de salvar
+      // Normalizar tipo: VASILHAME_VAZIO → EMPTY_CONTAINER, etc.
+      let type = product.tipo || product.type;
+      if (type === 'VASILHAME_VAZIO') type = 'EMPTY_CONTAINER';
+      else if (type === 'GAS_CHEIO') type = 'FILLED_GAS';
+      else if (type === 'OUTROS') type = 'OTHER';
+      
       const dbProduct = {
         id: product.id,
         code: product.codigo || product.code,
         name: product.nome || product.name,
         description: product.descricao || product.description,
-        type: product.tipo || product.type,
+        type,
         unit: product.unidade || product.unit,
         sale_price: product.preco_venda ?? product.sale_price,
         cost_price: product.preco_custo ?? product.cost_price,
@@ -191,8 +212,17 @@ export const db: any = {
       if ('code' in updates) dbUpdates.code = updates.code;
       if ('nome' in updates) dbUpdates.name = updates.nome;
       if ('name' in updates) dbUpdates.name = updates.name;
-      if ('tipo' in updates) dbUpdates.type = updates.tipo;
+      
+      // Normalizar tipo PT→EN
+      if ('tipo' in updates) {
+        let type = updates.tipo;
+        if (type === 'VASILHAME_VAZIO') type = 'EMPTY_CONTAINER';
+        else if (type === 'GAS_CHEIO') type = 'FILLED_GAS';
+        else if (type === 'OUTROS') type = 'OTHER';
+        dbUpdates.type = type;
+      }
       if ('type' in updates) dbUpdates.type = updates.type;
+      
       if ('unidade' in updates) dbUpdates.unit = updates.unidade;
       if ('unit' in updates) dbUpdates.unit = updates.unit;
       if ('preco_venda' in updates) dbUpdates.sale_price = updates.preco_venda;
