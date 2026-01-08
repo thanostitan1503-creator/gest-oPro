@@ -152,8 +152,8 @@ const NewProductModal: FC<Props> = ({ isOpen, onClose, deposits, products, defau
       setSaving(true);
 
       // ROTA A: CRIAÇÃO CONJUNTA (NOVA)
-      // Se for criar novo vasilhame, cria AMBOS (casco + produto) com dual creation
-      if (!isService && movementType === 'EXCHANGE' && returnProductMode === 'create_new') {
+      // Só cria AMBOS (casco + produto) se NÃO for vasilhame vazio
+      if (!isService && movementType === 'EXCHANGE' && returnProductMode === 'create_new' && tipo !== 'VASILHAME_VAZIO') {
         const cascoPayload: Partial<Produto> = {
           nome: returnProductName.trim(),
           tipo: 'VASILHAME_VAZIO',

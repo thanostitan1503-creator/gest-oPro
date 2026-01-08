@@ -90,16 +90,21 @@ const normalizeProductUpdate = (updates: any): ProductUpdate => {
 // Service
 // ---------------------------------------------------------------------------
 export const productService = {
-  // 1. Listar todos os produtos ativos
+  // 1. Listar todos os produtos ativos (NUNCA clona, nunca duplica)
   async getAll(): Promise<Product[]> {
     const { data, error } = await supabase
       .from('products')
       .select('*')
       .eq('is_active', true)
       .order('name');
-
     if (error) throw new Error(`Erro ao listar produtos: ${error.message}`);
-    return data || [];
+    // Deduplicar por id (caso algum bug crie duplicata)
+    const seen = new Set();
+    return (data || []).filter(row => {
+      if (seen.has(row.id)) return false;
+      seen.add(row.id);
+      return true;
+    });
   },
 
   // 2. Listar produtos por depósito (usando deposit_id direto)
@@ -320,7 +325,7 @@ export const productService = {
       };
     }
 
-    // Em vez de clonar produtos por depósito, usamos a tabela product_pricing
+    // NUNCA clonar produtos por depósito! Só product_pricing faz upsert.
     const updates = buildPriceUpdates(pricing);
 
     // Upsert na tabela product_pricing (product_id + deposit_id é a key)

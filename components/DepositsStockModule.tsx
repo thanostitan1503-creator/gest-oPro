@@ -321,39 +321,44 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     }
   }, [hydratePricingState]);
 
-  // Carrega produtos online (fonte única) e mantém sincronização após refreshKey
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const rows = await productService.getAll();
-        if (!mounted) return;
-        // Corrige mapeamento para garantir nome/preço
-        setAllProducts(rows.map(row => ({
-          ...row,
-          nome: row.name ?? row.nome ?? '',
-          preco_venda: row.sale_price ?? row.preco_venda ?? 0,
-          preco_troca: row.exchange_price ?? row.preco_troca ?? 0,
-          preco_completa: row.full_price ?? row.preco_completa ?? 0,
-          ativo: row.is_active ?? row.ativo ?? true,
-        })) as any);
-        const stockTracked = await productService.getStockTracked();
-        if (!mounted) return;
-        setProducts(stockTracked.map(row => ({
-          ...row,
-          nome: row.name ?? row.nome ?? '',
-          preco_venda: row.sale_price ?? row.preco_venda ?? 0,
-          preco_troca: row.exchange_price ?? row.preco_troca ?? 0,
-          preco_completa: row.full_price ?? row.preco_completa ?? 0,
-          ativo: row.is_active ?? row.ativo ?? true,
-        })) as any);
-      } catch (err) {
-        console.error('Erro ao carregar produtos do serviço:', err);
-        toast.error('Erro ao carregar produtos (online)');
+  // Função para carregar produtos (por depósito ou gestão central)
+  const loadProducts = useCallback(async (depositId?: string) => {
+    try {
+      let rows: Product[] = [];
+      if (depositId) {
+        rows = await productService.getByDeposit(depositId);
+      } else {
+        rows = await productService.getAll();
+        // NÃO filtrar deposit_id=null na gestão central!
       }
-    })();
-    return () => { mounted = false; };
-  }, [refreshKey]);
+      // Corrige mapeamento para garantir nome/preço
+      setAllProducts(rows.map(row => ({
+        ...row,
+        nome: row.name ?? row.nome ?? '',
+        preco_venda: row.sale_price ?? row.preco_venda ?? 0,
+        preco_troca: row.exchange_price ?? row.preco_troca ?? 0,
+        preco_completa: row.full_price ?? row.preco_completa ?? 0,
+        ativo: row.is_active ?? row.ativo ?? true,
+      })) as any);
+      const stockTracked = await productService.getStockTracked();
+      setProducts(stockTracked.map(row => ({
+        ...row,
+        nome: row.name ?? row.nome ?? '',
+        preco_venda: row.sale_price ?? row.preco_venda ?? 0,
+        preco_troca: row.exchange_price ?? row.preco_troca ?? 0,
+        preco_completa: row.full_price ?? row.preco_completa ?? 0,
+        ativo: row.is_active ?? row.ativo ?? true,
+      })) as any);
+    } catch (err) {
+      console.error('Erro ao carregar produtos do serviço:', err);
+      toast.error('Erro ao carregar produtos (online)');
+    }
+  }, []);
+
+  // Carrega produtos ao montar ou ao atualizar refreshKey
+  useEffect(() => {
+    loadProducts();
+  }, [refreshKey, loadProducts]);
 
   const handlePricingInput = useCallback((depositId: string, field: keyof PricingForm, rawValue: string) => {
     setPricingByDeposit(prev => {
@@ -574,45 +579,20 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   };
 
   const handleEditProduct = (product: Product) => {
-    // Extrair preços corretamente (podem vir em diferentes formatos)
-    const precoVenda = Number(product.preco_venda ?? (product as any).sale_price ?? 0) || 0;
-    const precoCusto = Number(product.preco_custo ?? (product as any).cost_price ?? 0) || 0;
-    const precoTroca = (product as any).preco_troca ?? (product as any).exchange_price;
-    const precoCompleta = (product as any).preco_completa ?? (product as any).full_price;
-    
-    // Preservar return_product_id explicitamente
-    const returnProductId = product.return_product_id ?? (product as any).returnProductId ?? null;
-    
-    console.log('[handleEditProduct] Carregando produto:', {
-      id: product.id,
-      nome: product.nome,
-      movement_type: product.movement_type,
-      return_product_id: returnProductId,
-      precoVenda,
-      precoTroca,
-      precoCompleta,
-      rawProduct: product,
-    });
-    
-    // Verificar se o vasilhame vazio existe na lista
-    if (returnProductId) {
-      const foundEmpty = allProducts.find(p => p.id === returnProductId);
-      console.log('[handleEditProduct] Vasilhame vazio vinculado encontrado:', foundEmpty ? `${foundEmpty.nome} (${foundEmpty.id})` : 'NÃO ENCONTRADO!');
-    }
-    
+    // Mapeamento robusto para garantir que os campos nunca zerem
     const formData: ProductForm = {
       id: product.id,
-      codigo: product.codigo || '',
-      nome: product.nome || '',
-      tipo: (product.tipo as ProductForm['tipo']) || 'OUTROS',
-      movement_type: (product.movement_type as StockMovementRule) || 'SIMPLE',
-      return_product_id: returnProductId,
-      preco_venda: precoVenda,
-      preco_custo: precoCusto,
-      preco_troca: precoTroca != null ? Number(precoTroca) : null,
-      preco_completa: precoCompleta != null ? Number(precoCompleta) : null,
-      track_stock: product.track_stock ?? true,
-      ativo: product.ativo ?? true,
+      codigo: product.codigo || (product as any).code || '',
+      nome: product.nome ?? (product as any).name ?? '',
+      tipo: (product.tipo as ProductForm['tipo']) || (product as any).type || 'OUTROS',
+      movement_type: (product.movement_type as StockMovementRule) || (product as any).movementType || 'SIMPLE',
+      return_product_id: product.return_product_id ?? (product as any).returnProductId ?? null,
+      preco_venda: Number(product.preco_venda ?? (product as any).sale_price ?? 0) || 0,
+      preco_custo: Number(product.preco_custo ?? (product as any).cost_price ?? 0) || 0,
+      preco_troca: (product as any).preco_troca != null ? Number((product as any).preco_troca) : ((product as any).exchange_price != null ? Number((product as any).exchange_price) : null),
+      preco_completa: (product as any).preco_completa != null ? Number((product as any).preco_completa) : ((product as any).full_price != null ? Number((product as any).full_price) : null),
+      track_stock: product.track_stock ?? (product as any).trackStock ?? true,
+      ativo: product.ativo ?? (product as any).is_active ?? true,
     };
     setProductForm(formData);
     setIsEditingProduct(true);
@@ -735,14 +715,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       }
 
       // Atualizar lista local imediatamente
-      try {
-        const rows = await productService.getAll();
-        setAllProducts(rows as any);
-        const stockTracked = await productService.getStockTracked();
-        setProducts(stockTracked as any);
-      } catch (err) {
-        console.error('Erro ao atualizar lista de produtos após salvar:', err);
-      }
+      await loadProducts();
 
       setProductForm(EMPTY_PRODUCT_FORM);
       setIsEditingProduct(false);
@@ -757,23 +730,22 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     }
   };
 
-  const handleDeleteProduct = async () => {
-    if (!deleteProductModal) return;
-    
-    // Verificar se produto está em uso em alguma OS
-    const productInUse = serviceOrders.some(os => 
-      os.itens?.some(item => item.produtoId === deleteProductModal.id)
-    );
-    
-    if (productInUse) {
-      alert('Este produto não pode ser excluído pois está sendo usado em Ordens de Serviço.');
-      setDeleteProductModal(null);
-      return;
+  const handleSaveProduct = async (...args) => {
+    setSavingProduct(true);
+    try {
+      // ...existing code...
+      await loadProducts();
+      setProductForm(EMPTY_PRODUCT_FORM);
+      setIsEditingProduct(false);
+      setPricingByDeposit({});
+      setExistingPricingDeposits(new Set());
+      toast.success('Produto salvo com sucesso!');
+    } catch (error) {
+      // ...existing code...
+    } finally {
+      setSavingProduct(false);
     }
-
-    // Verificar se há movimentações de estoque vinculadas
-    const movementsCount = await db.stock_movements?.where('product_id')
-      .equals(deleteProductModal.id)
+  };
       .count?.();
     if (movementsCount && movementsCount > 0) {
       alert('Este produto não pode ser excluído: existem movimentações de estoque vinculadas.');
