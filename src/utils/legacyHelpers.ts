@@ -352,8 +352,10 @@ export const db: any = {
   },
   payment_methods: { 
     toArray: async () => {
-      const { data } = await supabase.from('payment_methods').select('*');
-      return data || [];
+      const { data } = await supabase
+        .from('payment_methods')
+        .select('id,name,method_kind,receipt_type,generates_receivable,is_active,created_at,updated_at');
+      return (data || []).map(normalizePaymentMethodRow);
     },
     filter: () => ({ toArray: async () => [] }),
   },
@@ -478,21 +480,19 @@ export const db: any = {
   },
   accounts_receivable: {
     toArray: async () => {
-      const { data } = await supabase.from('accounts_receivable').select('*');
+      const { data } = await supabase
+        .from('accounts_receivable')
+        .select('id,order_id,deposit_id,client_id,client_name,original_amount,paid_amount,remaining_amount,status,due_date,notes,created_at,updated_at');
       return data || [];
     },
   },
+  // receivable_payments removed - use financialService for payments history
   receivable_payments: {
-    where: (field: string) => ({
-      equals: (value: any) => ({
-        toArray: async () => {
-          const { data } = await supabase.from('receivable_payments').select('*').eq(field, value);
-          return data || [];
-        },
-      }),
-    }),
+    toArray: async () => {
+      console.warn('legacyHelpers.receivable_payments is deprecated. Use financialService methods instead.');
+      return [];
+    },
   },
-  receivables: {},
   cash_flow_entries: {
     where: (field: string) => ({
       equals: (value: any) => ({
@@ -581,10 +581,43 @@ export const getProducts = listProducts;
 
 // ==================== PAYMENT METHODS ====================
 
+const PAYMENT_METHOD_FIELDS =
+  'id,name,method_kind,receipt_type,generates_receivable,is_active,created_at,updated_at';
+const DEPOSIT_CONFIG_FIELDS =
+  'payment_method_id,deposit_id,is_active,due_days,created_at,updated_at';
+
+const normalizeMethodKind = (value?: string | null): PaymentMethod['method_kind'] => {
+  const upper = String(value ?? '').toUpperCase();
+  if (upper === 'CASH' || upper === 'DINHEIRO') return 'CASH';
+  if (upper === 'PIX') return 'PIX';
+  if (upper === 'CARD' || upper === 'CARTAO' || upper === 'CREDITO' || upper === 'DEBITO') return 'CARD';
+  if (upper === 'FIADO') return 'FIADO';
+  if (upper === 'BOLETO') return 'BOLETO';
+  if (upper === 'VALE') return 'VALE';
+  return 'OTHER';
+};
+
+const normalizeReceiptType = (
+  value?: string | null,
+  methodKind?: string | null
+): PaymentMethod['receipt_type'] => {
+  const upper = String(value ?? '').toUpperCase();
+  if (upper === 'IMMEDIATE' || upper === 'DEFERRED') {
+    return upper as PaymentMethod['receipt_type'];
+  }
+  if (upper === 'CASH' || upper === 'PIX') return 'IMMEDIATE';
+  if (upper === 'FIADO' || upper === 'BOLETO' || upper === 'VALE') return 'DEFERRED';
+  const kind = normalizeMethodKind(methodKind);
+  if (kind === 'CASH' || kind === 'PIX') return 'IMMEDIATE';
+  if (kind === 'FIADO' || kind === 'BOLETO' || kind === 'VALE') return 'DEFERRED';
+  return 'IMMEDIATE';
+};
+
 const normalizePaymentMethodRow = (row: any): PaymentMethod => ({
   id: row.id,
   name: row.name ?? '',
-  receipt_type: row.receipt_type ?? 'other',
+  method_kind: normalizeMethodKind(row.method_kind),
+  receipt_type: normalizeReceiptType(row.receipt_type, row.method_kind),
   generates_receivable: row.generates_receivable ?? false,
   is_active: row.is_active ?? true,
   created_at: row.created_at ?? null,
@@ -592,7 +625,9 @@ const normalizePaymentMethodRow = (row: any): PaymentMethod => ({
 });
 
 export const listPaymentMethods = async (): Promise<PaymentMethod[]> => {
-  const { data, error } = await supabase.from('payment_methods').select('*');
+  const { data, error } = await supabase
+    .from('payment_methods')
+    .select(PAYMENT_METHOD_FIELDS);
   if (error) throw error;
   return (data || []).map(normalizePaymentMethodRow);
 };
@@ -601,6 +636,7 @@ export const upsertPaymentMethod = async (method: PaymentMethod): Promise<Paymen
   const payload: any = {
     id: method.id,
     name: method.name,
+    method_kind: method.method_kind,
     receipt_type: method.receipt_type,
     generates_receivable: method.generates_receivable,
     is_active: method.is_active,
@@ -614,6 +650,7 @@ export const upsertPaymentMethod = async (method: PaymentMethod): Promise<Paymen
   const { data, error } = await supabase
     .from('payment_methods')
     .upsert(payload)
+    .select(PAYMENT_METHOD_FIELDS)
     .maybeSingle();
 
   if (error) throw error;
@@ -633,7 +670,6 @@ const normalizePaymentMethodDepositConfigRow = (row: any): PaymentMethodDepositC
   deposit_id: row.deposit_id,
   is_active: row.is_active ?? true,
   due_days: Number(row.due_days ?? 0),
-  max_installments: Number(row.max_installments ?? 1),
   created_at: row.created_at ?? null,
   updated_at: row.updated_at ?? null,
 });
@@ -646,7 +682,7 @@ export const listPaymentMethodDepositConfigs = async (filters?: {
   paymentMethodId?: string;
   depositId?: string;
 }): Promise<PaymentMethodDepositConfig[]> => {
-  let query = supabase.from('payment_method_deposit_config').select('*');
+  let query = supabase.from('payment_method_deposit_config').select(DEPOSIT_CONFIG_FIELDS);
   if (filters?.paymentMethodId) {
     query = query.eq('payment_method_id', filters.paymentMethodId);
   }
@@ -670,7 +706,7 @@ export const getPaymentMethodDepositConfig = async (
 ): Promise<PaymentMethodDepositConfig | null> => {
   const { data, error } = await supabase
     .from('payment_method_deposit_config')
-    .select('*')
+    .select(DEPOSIT_CONFIG_FIELDS)
     .eq('payment_method_id', paymentMethodId)
     .eq('deposit_id', depositId)
     .maybeSingle();
@@ -695,14 +731,13 @@ export const upsertPaymentMethodDepositConfigs = async (
     deposit_id: config.deposit_id,
     is_active: config.is_active,
     due_days: config.due_days,
-    max_installments: config.max_installments,
     updated_at: new Date().toISOString(),
   }));
 
   const { data, error } = await supabase
     .from('payment_method_deposit_config')
     .upsert(payload, { onConflict: 'payment_method_id,deposit_id' })
-    .select('*');
+    .select(DEPOSIT_CONFIG_FIELDS);
 
   if (error) {
     if (isMissingPaymentConfigTable(error)) {

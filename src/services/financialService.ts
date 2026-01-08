@@ -9,21 +9,33 @@ import { Database } from '../types/supabase';
 
 export type AccountsReceivable = Database['public']['Tables']['accounts_receivable']['Row'];
 export type NewAccountsReceivable = Database['public']['Tables']['accounts_receivable']['Insert'];
+export type UpdateAccountsReceivable = Database['public']['Tables']['accounts_receivable']['Update'];
 export type Expense = Database['public']['Tables']['expenses']['Row'];
 export type NewExpense = Database['public']['Tables']['expenses']['Insert'];
+export type CashFlowEntry = Database['public']['Tables']['cash_flow_entries']['Row'];
+export type NewCashFlowEntry = Database['public']['Tables']['cash_flow_entries']['Insert'];
 export type WorkShift = Database['public']['Tables']['work_shifts']['Row'];
 export type NewWorkShift = Database['public']['Tables']['work_shifts']['Insert'];
 
+const ACCOUNTS_RECEIVABLE_FIELDS =
+  'id,order_id,deposit_id,client_id,client_name,original_amount,paid_amount,remaining_amount,status,due_date,notes,created_at,updated_at';
+const normalizeDueDate = (value?: string | number | null) => {
+  if (!value) return null;
+  if (typeof value === 'number') return new Date(value).toISOString().split('T')[0];
+  return value;
+};
+
 export const financialService = {
-  // ==================== CONTAS A RECEBER ====================
+
+  /**
 
   /**
    * 1. Listar contas a receber pendentes
    */
-  async getPendingReceivables(depositId?: string): Promise<AccountsReceivable[]> {
+    async getPendingReceivables(depositId?: string): Promise<AccountsReceivable[]> {
     let query = supabase
       .from('accounts_receivable')
-      .select('*')
+      .select(ACCOUNTS_RECEIVABLE_FIELDS)
       .eq('status', 'PENDENTE')
       .order('due_date');
 
@@ -37,13 +49,47 @@ export const financialService = {
   },
 
   /**
+   * 1b. Listar contas a receber (geral)
+   */
+  async listReceivables(filters?: {
+    depositId?: string;
+    status?: string | string[];
+    fromDueDate?: string;
+    toDueDate?: string;
+  }): Promise<AccountsReceivable[]> {
+    let query = supabase
+      .from('accounts_receivable')
+      .select(ACCOUNTS_RECEIVABLE_FIELDS)
+      .order('due_date');
+
+    if (filters?.depositId) {
+      query = query.eq('deposit_id', filters.depositId);
+    }
+    if (filters?.status) {
+      query = Array.isArray(filters.status)
+        ? query.in('status', filters.status)
+        : query.eq('status', filters.status);
+    }
+    if (filters?.fromDueDate) {
+      query = query.gte('due_date', filters.fromDueDate);
+    }
+    if (filters?.toDueDate) {
+      query = query.lte('due_date', filters.toDueDate);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(`Erro ao listar receb」eis: ${error.message}`);
+    return data || [];
+  },
+
+  /**
    * 2. Criar conta a receber
    */
   async createReceivable(receivable: NewAccountsReceivable): Promise<AccountsReceivable> {
     const { data, error } = await supabase
       .from('accounts_receivable')
       .insert(receivable as Database['public']['Tables']['accounts_receivable']['Insert'])
-      .select()
+      .select(ACCOUNTS_RECEIVABLE_FIELDS)
       .maybeSingle();
 
     if (error) throw new Error(`Erro ao criar recebível: ${error.message}`);
@@ -53,50 +99,50 @@ export const financialService = {
   /**
    * 3. Marcar como pago
    */
-  async markReceivableAsPaid(
+    async markReceivableAsPaid(
     id: string,
-    paymentMethodId: string,
-    amount: number
+    amount: number,
+    paidAt?: string | number | null
   ): Promise<void> {
-    const { data: receivable, error: fetchError } = await supabase
-      .from('accounts_receivable')
-      .select('original_amount, paid_amount, remaining_amount, status')
-      .eq('id', id)
-      .maybeSingle();
+    try {
+      const { data: receivable, error: fetchError } = await supabase
+        .from('accounts_receivable')
+        .select('original_amount, paid_amount, remaining_amount, status')
+        .eq('id', id)
+        .maybeSingle();
 
-    if (fetchError) throw new Error(`Erro ao buscar recebível: ${fetchError.message}`);
-    if (!receivable) throw new Error('Recebível não encontrado');
+      if (fetchError) throw fetchError;
+      if (!receivable) throw new Error('Conta a receber nao encontrada.');
 
-    const original = Number(receivable.original_amount || 0);
-    const currentPaid = Number(receivable.paid_amount || 0);
-    const nextPaid = currentPaid + Number(amount || 0);
-    const nextRemaining = Math.max(0, original - nextPaid);
-    const nextStatus = nextRemaining <= 0 ? 'PAGO' : (receivable.status || 'PENDENTE');
+      const original = Number(receivable.original_amount || 0);
+      const currentPaid = Number(receivable.paid_amount || 0);
+      const nextPaid = currentPaid + Number(amount || 0);
+      const nextRemaining = Math.max(0, original - nextPaid);
+      const nextStatus = nextRemaining <= 0 ? 'PAGO' : (receivable.status || 'PENDENTE');
 
-    const { error: updateError } = await supabase
-      .from('accounts_receivable')
-      .update({
+      const update: UpdateAccountsReceivable = {
         paid_amount: nextPaid,
         remaining_amount: nextRemaining,
         status: nextStatus,
         updated_at: new Date().toISOString()
-      } as Database['public']['Tables']['accounts_receivable']['Update'])
-      .eq('id', id);
+      };
 
-    if (updateError) throw new Error(`Erro ao atualizar: ${updateError.message}`);
+      if (paidAt) {
+        update.updated_at =
+          typeof paidAt === 'number'
+            ? new Date(paidAt).toISOString()
+            : new Date(paidAt).toISOString();
+      }
 
-    const { error: paymentError } = await supabase
-      .from('receivable_payments')
-      .insert({
-        receivable_id: id,
-        amount,
-        payment_method: paymentMethodId || null,
-        paid_at: new Date().toISOString()
-      } as Database['public']['Tables']['receivable_payments']['Insert'])
-      .select()
-      .maybeSingle();
+      const { error: updateError } = await supabase
+        .from('accounts_receivable')
+        .update(update)
+        .eq('id', id);
 
-    if (paymentError) throw new Error(`Erro ao registrar pagamento: ${paymentError.message}`);
+      if (updateError) throw updateError;
+    } catch (error: any) {
+      throw new Error(`Erro ao registrar pagamento: ${error.message}`);
+    }
   },
 
   /**
@@ -107,7 +153,7 @@ export const financialService = {
 
     let query = supabase
       .from('accounts_receivable')
-      .select('*')
+      .select(ACCOUNTS_RECEIVABLE_FIELDS)
       .eq('status', 'PENDENTE')
       .lt('due_date', today)
       .order('due_date');
@@ -129,6 +175,160 @@ export const financialService = {
     }
 
     return data || [];
+  },
+
+  /**
+   * Atualiza campos de um recebível. Aceita keys legadas e mapeia para o schema canonical
+   */
+  async updateReceivable(
+    id: string,
+    patch: UpdateAccountsReceivable & {
+      valor_total?: number;
+      valor_pago?: number;
+      vencimento_em?: number | string;
+    }
+  ): Promise<AccountsReceivable | null> {
+    const update: UpdateAccountsReceivable = {};
+
+    if (patch.valor_total !== undefined) update.original_amount = patch.valor_total;
+    if (patch.valor_pago !== undefined) update.paid_amount = patch.valor_pago;
+    if (patch.remaining_amount !== undefined) update.remaining_amount = patch.remaining_amount;
+    if (patch.vencimento_em !== undefined) update.due_date = normalizeDueDate(patch.vencimento_em);
+    if (patch.due_date !== undefined) update.due_date = normalizeDueDate(patch.due_date) ?? undefined;
+    if (patch.status !== undefined) update.status = patch.status;
+    if (patch.client_name !== undefined) update.client_name = patch.client_name;
+    if (patch.notes !== undefined) update.notes = patch.notes;
+    if (patch.original_amount !== undefined) update.original_amount = patch.original_amount;
+    if (patch.paid_amount !== undefined) update.paid_amount = patch.paid_amount;
+    if (patch.order_id !== undefined) update.order_id = patch.order_id;
+    if (patch.deposit_id !== undefined) update.deposit_id = patch.deposit_id;
+    if (patch.client_id !== undefined) update.client_id = patch.client_id;
+
+    if (Object.keys(update).length === 0) return null;
+    update.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('accounts_receivable')
+      .update(update as UpdateAccountsReceivable)
+      .eq('id', id)
+      .select(ACCOUNTS_RECEIVABLE_FIELDS)
+      .maybeSingle();
+
+    if (error) throw new Error(`Erro ao atualizar recebível: ${error.message}`);
+    return data || null;
+  },
+
+  /**
+   * Lista recebíveis por depósito (wrapper)
+   */
+  async listReceivablesByDeposit(depositId?: string): Promise<AccountsReceivable[]> {
+    return this.listReceivables({ depositId });
+  },
+
+  /**
+   * Remover conta a receber
+   */
+  async deleteReceivable(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('accounts_receivable')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`Erro ao remover receb」el: ${error.message}`);
+  },
+
+  /**
+   * Aplicar pagamento (sem historico detalhado)
+   */
+  async applyReceivablePayment(payload: {
+    receivableId: string;
+    amount: number;
+    paidAt?: string | number | null;
+  }): Promise<AccountsReceivable> {
+    try {
+      const amountValue = Number(payload.amount || 0);
+      if (!Number.isFinite(amountValue) || amountValue <= 0) {
+        throw new Error('Valor de pagamento invalido');
+      }
+
+      const { data: receivable, error: fetchError } = await supabase
+        .from('accounts_receivable')
+        .select('original_amount, paid_amount, remaining_amount, status')
+        .eq('id', payload.receivableId)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+      if (!receivable) throw new Error('Conta a receber nao encontrada.');
+
+      const original = Number(receivable.original_amount || 0);
+      const currentPaid = Number(receivable.paid_amount || 0);
+      const nextPaid = currentPaid + amountValue;
+      const nextRemaining = Math.max(0, original - nextPaid);
+      const nextStatus = nextRemaining <= 0 ? 'PAGO' : (receivable.status || 'PENDENTE');
+
+      const update: UpdateAccountsReceivable = {
+        paid_amount: nextPaid,
+        remaining_amount: nextRemaining,
+        status: nextStatus,
+        updated_at: new Date().toISOString()
+      };
+
+      if (payload.paidAt) {
+        update.updated_at =
+          typeof payload.paidAt === 'number'
+            ? new Date(payload.paidAt).toISOString()
+            : new Date(payload.paidAt).toISOString();
+      }
+
+      const { data, error: updateError } = await supabase
+        .from('accounts_receivable')
+        .update(update)
+        .eq('id', payload.receivableId)
+        .select(ACCOUNTS_RECEIVABLE_FIELDS)
+        .maybeSingle();
+
+      if (updateError) throw updateError;
+      if (!data) throw new Error('Pagamento nao aplicado.');
+      return data;
+    } catch (error: any) {
+      throw new Error(`Erro ao aplicar pagamento: ${error.message}`);
+    }
+  },
+
+  /**
+   * Registrar movimento de caixa
+   */
+  async registerCashFlow(payload: {
+    category: string;
+    amount: number;
+    direction: 'IN' | 'OUT';
+    paymentType?: string | null;
+    notes?: string | null;
+    depositId: string | null;
+    userId?: string | null;
+    shiftId?: string | null;
+  }): Promise<CashFlowEntry> {
+    if (!payload.depositId) throw new Error('Deposito obrigatorio');
+
+    const insert: NewCashFlowEntry = {
+      amount: payload.amount,
+      category: payload.category,
+      direction: payload.direction,
+      payment_method: payload.paymentType ?? null,
+      description: payload.notes ?? null,
+      deposit_id: payload.depositId,
+      user_id: payload.userId ?? null,
+      shift_id: payload.shiftId ?? null,
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('cash_flow_entries')
+      .insert(insert as NewCashFlowEntry)
+      .select()
+      .maybeSingle();
+
+    if (error) throw new Error(`Erro ao registrar caixa: ${error.message}`);
+    return data as CashFlowEntry;
   },
 
   // ==================== DESPESAS ====================
@@ -372,5 +572,26 @@ export const financialService = {
       balance: revenue - totalExpenses,
       receivables_due: receivablesDue
     };
-  }
+  },
+
+  /**
+   * 13. Obter estatísticas do dashboard de auditoria via RPC
+   * (Wrapper para o RPC get_audit_dashboard_stats)
+   */
+  async getAuditDashboardStats(targetDepositId?: string): Promise<any> {
+    try {
+      const { data, error } = await supabase.rpc('get_audit_dashboard_stats', {
+        target_deposit_id: targetDepositId ?? null,
+      });
+      if (error) throw error;
+      return Array.isArray(data) ? data[0] : data;
+    } catch (err) {
+      // Não propaga erro técnico diretamente - componente deve mostrar toast
+      console.warn('financialService.getAuditDashboardStats failed', err);
+      return null;
+    }
+  },
 };
+
+
+

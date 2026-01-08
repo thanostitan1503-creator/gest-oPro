@@ -15,9 +15,29 @@ import { NewClientModal } from './NewClientModal';
 import { ServiceOrderItems } from './ServiceOrderItems';
 import { Cliente, Produto, OrdemServico, ItemOrdemServico, StatusOS, Colaborador, LogHistoricoOS } from '@/domain/types';
 import { PaymentMethod, PaymentMethodDepositConfig } from '@/types';
-import { getOrders, listPaymentMethodDepositConfigs } from '@/utils/legacyHelpers';
+import { getOrders } from '@/utils/legacyHelpers';
 import { supabase } from '@/utils/supabaseClient';
-import { productService, depositService, employeeService, financialService } from '@/services';
+import { normalizeDateForSupabase } from '@/utils/date';
+import {
+  productService,
+  depositService,
+  employeeService,
+  financialService,
+  listPaymentMethods,
+  listPaymentMethodDepositConfigs,
+} from '@/services';
+import type { Deposit as DepositRow } from '@/services/depositService';
+
+type EmployeeRow = {
+  id: string;
+  name: string;
+  role?: string | null;
+  deposit_id?: string | null;
+  active?: boolean;
+  username?: string | null;
+  permissions?: string[];
+};
+import { toast } from 'sonner';
 import { SYSTEM_USER_ID } from '@/constants/system';
 
 // Stub para db e useLiveQuery
@@ -43,19 +63,17 @@ const listServiceOrders = async () => {
   return await getOrders();
 };
 
-const listPaymentMethods = async (): Promise<PaymentMethod[]> => {
-  const { data, error } = await supabase.from('payment_methods').select('*').eq('is_active', true);
-  if (error) throw error;
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    name: row.name ?? '',
-    receipt_type: row.receipt_type ?? 'other',
-    generates_receivable: row.generates_receivable ?? false,
-    is_active: row.is_active ?? true,
-    created_at: row.created_at ?? null,
-    updated_at: row.updated_at ?? null,
-  }));
+const normalizeMethodKind = (value?: string | null): PaymentMethod['method_kind'] => {
+  const upper = String(value ?? '').toUpperCase();
+  if (upper === 'CASH' || upper === 'DINHEIRO') return 'CASH';
+  if (upper === 'PIX') return 'PIX';
+  if (upper === 'CARD' || upper === 'CARTAO' || upper === 'CREDITO' || upper === 'DEBITO') return 'CARD';
+  if (upper === 'FIADO') return 'FIADO';
+  if (upper === 'BOLETO') return 'BOLETO';
+  if (upper === 'VALE') return 'VALE';
+  return 'OTHER';
 };
+
 
 const listEmployees = async (): Promise<Colaborador[]> => {
   const { data, error } = await supabase.from('employees').select('*').eq('is_active', true);
@@ -103,8 +121,8 @@ const upsertClient = async (client: Partial<Cliente>) => {
     address: client.endereco,
     phone: client.telefone,
     cpf: client.cpf,
-    reference: client.referencia,
-    birth_date: client.dataNascimento,
+      reference: client.referencia,
+      birth_date: normalizeDateForSupabase(client.dataNascimento),
     delivery_zone_id: client.deliveryZoneId,
     is_active: client.ativo ?? true,
   };
@@ -472,7 +490,7 @@ interface PaymentItem {
   methodId: string;
   methodName: string;
   value: number;
-  methodType: PaymentMethod['receipt_type'];
+  methodKind: PaymentMethod['method_kind'];
 }
 
 const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSuccess, initialData, currentUser }) => {
@@ -591,27 +609,27 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     (async () => {
       try {
         const [depsRaw, empsRaw] = await Promise.all([
-          depositService.getAll().catch(() => []),
-          employeeService.getAll().catch(() => []),
+          depositService.getAll(),
+          employeeService.getAll(),
         ]);
 
         if (!mounted) return;
 
-        const deps = (depsRaw || []).map((d: any) => ({
+        const deps = (depsRaw || []).map((d: DepositRow) => ({
           id: d.id,
           nome: d.name,
-          ativo: d.active,
+          ativo: d.active ?? d.is_active ?? false,
           endereco: d.address,
           cor: d.color,
         } as Deposito)).filter((d) => currentUser?.depositoId ? d.id === currentUser.depositoId : d.ativo !== false);
 
-        const emps = (empsRaw || []).map((e: any) => ({
+        const emps = (empsRaw || []).map((e: EmployeeRow) => ({
           id: e.id,
           nome: e.name,
           cargo: e.role,
-          depositoId: e.deposit_id,
-          ativo: e.active,
-          username: e.username,
+          depositoId: e.deposit_id ?? null,
+          ativo: e.active ?? false,
+          username: e.username ?? undefined,
           permissoes: e.permissions || [],
         } as Colaborador));
 
@@ -629,6 +647,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
         setAvailableDrivers(drivers);
       } catch (err) {
         console.error('Erro ao carregar depósitos/entregadores', err);
+        toast.error('Erro ao carregar depósitos');
         if (mounted) {
           setAvailableDeposits([]);
           setAvailableDrivers([]);
@@ -673,8 +692,11 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     return map;
   }, [paymentMethodConfigs, activeDepositId]);
   const availablePaymentMethods = useMemo(() => {
-    if (!activeDepositId) return paymentMethodsDB;
+    if (!activeDepositId) {
+      return paymentMethodsDB.filter((method) => method.is_active !== false);
+    }
     return paymentMethodsDB.filter((method) => {
+      if (method.is_active === false) return false;
       const config = paymentMethodConfigMap.get(method.id);
       return config ? config.is_active !== false : true;
     });
@@ -848,7 +870,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
           methodId: (p as any).payment_method_id || (p as any).formaPagamentoId,
           methodName: method?.name ?? method?.nome ?? 'Pagamento',
           value: (p as any).amount ?? (p as any).valor,
-          methodType: method?.receipt_type ?? (p as any).type ?? 'other',
+          methodKind: normalizeMethodKind(method?.method_kind ?? null),
         };
       });
       setPayments(loadedPayments);
@@ -905,9 +927,10 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   const totalPaid = payments.reduce((acc, p) => acc + p.value, 0);
   const remaining = Math.max(0, totalOrder - totalPaid);
   const selectedMethodEntity = paymentMethodsDB.find(m => m.id === selectedPaymentMethod);
-  const cashInputValue = selectedMethodEntity?.receipt_type === 'cash' ? parseFloat(cashReceived || '0') : 0;
+  const isCashMethodSelected = selectedMethodEntity?.method_kind === 'CASH';
+  const cashInputValue = isCashMethodSelected ? parseFloat(cashReceived || '0') : 0;
   const computedChange = cashInputValue > 0 ? Math.max(0, cashInputValue - totalOrder) : Math.max(0, totalPaid - totalOrder);
-  const hasCashPayment = payments.some(p => p.methodType === 'cash') || selectedMethodEntity?.receipt_type === 'cash';
+  const hasCashPayment = payments.some(p => p.methodKind === 'CASH') || isCashMethodSelected;
   const showChange = computedChange > 0 && hasCashPayment;
 
   useEffect(() => {
@@ -1314,7 +1337,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     const method = paymentMethodsDB.find(m => m.id === selectedPaymentMethod);
     if (!method) return;
 
-    const isCash = method.receipt_type === 'cash';
+    const isCash = method.method_kind === 'CASH';
     const baseValue = isCash ? (cashReceived ? parseFloat(cashReceived) : 0) : (paymentValue ? parseFloat(paymentValue) : remaining);
     const valToUse = baseValue > 0 ? baseValue : remaining;
     if (valToUse <= 0) return;
@@ -1323,7 +1346,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       id: crypto.randomUUID(),
       methodId: method.id,
       methodName: method.name,
-      methodType: method.receipt_type,
+      methodKind: method.method_kind,
       value: valToUse,
     };
 
@@ -1361,7 +1384,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       ...oldPayment,
       methodId: method.id,
       methodName: method.name,
-      methodType: method.receipt_type,
+      methodKind: method.method_kind,
       value: newValue,
     };
     
@@ -1528,7 +1551,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       for (const payment of receivableCandidates) {
         const method = paymentMethodsDB.find((m) => m.id === payment.methodId);
         if (!method) continue;
-        const isImmediate = method.receipt_type === 'cash' || method.receipt_type === 'pix';
+        const isImmediate = method.receipt_type === 'IMMEDIATE';
         if (isImmediate || !method.generates_receivable) continue;
 
         const config = paymentMethodConfigMap.get(method.id);
@@ -1919,7 +1942,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
               </div>
             )}
             
-            {selectedMethodEntity?.receipt_type === 'cash' && (
+            {selectedMethodEntity?.method_kind === 'CASH' && (
               <div className="flex items-center gap-2 text-sm text-gray-700">
                 <label className="font-semibold">Valor Recebido (Dinheiro):</label>
                 <input
@@ -2246,13 +2269,29 @@ export const NewServiceOrder: React.FC<NewServiceOrderProps> = ({ onClose, curre
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [ords, prodsRaw, methods, empsRaw, depsRaw] = await Promise.all([
-        listServiceOrders(),
-        productService.getAll().catch(() => []),
-        listPaymentMethods(),
-        employeeService.getAll().catch(() => []),
-        depositService.getAll().catch(() => []),
-      ]);
+      let ords: OrdemServico[] = [];
+      let prodsRaw: Produto[] = [];
+      let methods: PaymentMethod[] = [];
+      let empsRaw: EmployeeRow[] = [];
+      let depsRaw: DepositRow[] = [];
+      try {
+        [ords, prodsRaw, methods, empsRaw, depsRaw] = await Promise.all([
+          listServiceOrders(),
+          productService.getAll(),
+          listPaymentMethods(),
+          employeeService.getAll(),
+          depositService.getAll(),
+        ]);
+      } catch (err) {
+        console.error('Erro ao carregar dados iniciais (produtos/depósitos/funcionários)', err);
+        toast.error('Erro ao carregar depósitos');
+        // Fallbacks
+        ords = await listServiceOrders().catch(() => []);
+        prodsRaw = [];
+        methods = await listPaymentMethods().catch(() => []);
+        empsRaw = [];
+        depsRaw = [];
+      }
       if (!alive) return;
 
       // Map products (service row -> Produto)

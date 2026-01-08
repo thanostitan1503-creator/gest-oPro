@@ -215,14 +215,9 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   }, []);
   
   // Produtos para estoque (apenas ativos com track_stock)
-  const products = useLiveQuery(() => db.products.filter(p => 
-    p.ativo !== false && 
-    (p.track_stock ?? true) !== false &&
-    p.type !== 'SERVICE'
-  ).toArray()) ?? [];
-  
+  const [products, setProducts] = React.useState<Product[]>([]);
   // TODOS os produtos (para gestão na aba Produtos)
-  const allProducts = useLiveQuery(() => db.products.toArray()) ?? [];
+  const [allProducts, setAllProducts] = React.useState<Product[]>([]);
   
   const serviceOrders = useLiveQuery(() => db.service_orders.toArray()) ?? [];
   const stockBalance = useLiveQuery(() => db.stock_balance.toArray(), [refreshKey]) ?? [];
@@ -325,6 +320,40 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       setPricingLoading(false);
     }
   }, [hydratePricingState]);
+
+  // Carrega produtos online (fonte única) e mantém sincronização após refreshKey
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const rows = await productService.getAll();
+        if (!mounted) return;
+        // Corrige mapeamento para garantir nome/preço
+        setAllProducts(rows.map(row => ({
+          ...row,
+          nome: row.name ?? row.nome ?? '',
+          preco_venda: row.sale_price ?? row.preco_venda ?? 0,
+          preco_troca: row.exchange_price ?? row.preco_troca ?? 0,
+          preco_completa: row.full_price ?? row.preco_completa ?? 0,
+          ativo: row.is_active ?? row.ativo ?? true,
+        })) as any);
+        const stockTracked = await productService.getStockTracked();
+        if (!mounted) return;
+        setProducts(stockTracked.map(row => ({
+          ...row,
+          nome: row.name ?? row.nome ?? '',
+          preco_venda: row.sale_price ?? row.preco_venda ?? 0,
+          preco_troca: row.exchange_price ?? row.preco_troca ?? 0,
+          preco_completa: row.full_price ?? row.preco_completa ?? 0,
+          ativo: row.is_active ?? row.ativo ?? true,
+        })) as any);
+      } catch (err) {
+        console.error('Erro ao carregar produtos do serviço:', err);
+        toast.error('Erro ao carregar produtos (online)');
+      }
+    })();
+    return () => { mounted = false; };
+  }, [refreshKey]);
 
   const handlePricingInput = useCallback((depositId: string, field: keyof PricingForm, rawValue: string) => {
     setPricingByDeposit(prev => {
@@ -671,39 +700,48 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         updated_at: new Date().toISOString(),
       };
 
-      await db.products.put(productData);
-
-      if (productData.track_stock !== false) {
-        await persistPricing(productData.id, productData.movement_type as StockMovementRule);
+      // Online save via productService
+      let savedProduct: any = null;
+      console.log('[handleSaveProduct] Enviando produto online', productData.id ? 'update' : 'create', productData.nome);
+      if (productForm.id) {
+        // Atualizar
+        savedProduct = await productService.update(productData.id, productData as any);
+      } else {
+        savedProduct = await productService.create(productData as any);
       }
-      
-      // Se criou um produto tipo GAS_CHEIO com EXCHANGE, criar automaticamente o vazio se não existir
+
+      // Persistir precificação por depósito (usa product_pricing agora)
+      if (productForm.track_stock !== false) {
+        await persistPricing(savedProduct.id, savedProduct.movement_type as StockMovementRule);
+      }
+
+      // Se criou um produto GAS_CHEIO com EXCHANGE e não há produto vazio vinculado, criar vazio
       if (!productForm.id && productForm.tipo === 'GAS_CHEIO' && productForm.movement_type === 'EXCHANGE' && !productForm.return_product_id) {
-        const emptyProduct: Product = {
-          id: crypto.randomUUID(),
-          codigo: `${productData.codigo}_VAZIO`,
+        const emptyPayload = {
           nome: `Vasilhame ${productForm.nome.trim()} (Vazio)`,
+          codigo: `${productData.codigo || ''}_VAZIO`,
           tipo: 'VASILHAME_VAZIO',
           movement_type: 'SIMPLE',
-          return_product_id: null,
           preco_venda: 0,
           preco_custo: 0,
           preco_padrao: 0,
           track_stock: true,
           ativo: true,
-          descricao: null,
-          unidade: 'un',
-          product_group: null,
-          imagem_url: null,
-          deposit_id: null,
-          marcacao: 0,
-          tracks_empties: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        await db.products.put(emptyProduct);
-        // Atualizar o produto cheio com o link
-        await db.products.update(productData.id, { return_product_id: emptyProduct.id });
+        } as any;
+
+        const createdEmpty = await productService.create(emptyPayload);
+        // Atualizar produto cheio com link para vazio
+        await productService.update(savedProduct.id, { return_product_id: createdEmpty.id });
+      }
+
+      // Atualizar lista local imediatamente
+      try {
+        const rows = await productService.getAll();
+        setAllProducts(rows as any);
+        const stockTracked = await productService.getStockTracked();
+        setProducts(stockTracked as any);
+      } catch (err) {
+        console.error('Erro ao atualizar lista de produtos após salvar:', err);
       }
 
       setProductForm(EMPTY_PRODUCT_FORM);

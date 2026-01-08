@@ -219,7 +219,7 @@ const NewServiceOrderModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     };
 
     // Transação de Salvamento
-    await db.transaction('rw', [db.service_orders, db.service_order_items, db.products, db.stock_movements, db.receivables, db.outbox_events], async () => {
+    await db.transaction('rw', [db.service_orders, db.service_order_items, db.products, db.stock_movements, db.accounts_receivable, db.outbox_events], async () => {
         
         // 1. Salva O.S
         await db.service_orders.put(serviceOrder as any);

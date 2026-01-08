@@ -18,7 +18,8 @@
     "users:check": "tsx scripts/check-users.ts",
     "users:fix": "tsx scripts/fix-users.ts",
     "db:reset": "tsx scripts/reset-db.ts",
-    "validate": "node scripts/validate-lei-magna.mjs"
+    "validate": "node scripts/validate-lei-magna.mjs",
+    "supabase:gen-types": "node scripts/gen-supabase-types.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

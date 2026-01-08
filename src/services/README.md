@@ -64,7 +64,7 @@ const products = await productService.getAll();
 ```tsx
 // ❌ PROIBIDO (v3.0)
 localStorage.setItem('products', JSON.stringify(products));
-await db.products.bulkPut(products); // Dexie removido!
+
 
 // ✅ CERTO
 const products = await productService.getAll(); // Sempre busca do servidor
@@ -114,8 +114,9 @@ import {
 
 ### Método 3: Supabase Client (quando necessário)
 ```tsx
-import { supabase } from '@/services';
-// Use apenas para operações não cobertas pelos serviços
+// NÃO importar `supabase` diretamente em componentes.
+// Se uma operação não estiver coberta por um service, estenda o service apropriado
+// em `src/services/` — não chame `supabase` do React.
 ```
 
 ---

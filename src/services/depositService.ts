@@ -30,8 +30,9 @@ export const depositService = {
   async getAll(): Promise<Deposit[]> {
     const { data, error } = await supabase
       .from('deposits')
-      .select('*')
-      .eq('active', true)
+      .select('id, name, address, color, is_active, active')
+      // aceite tanto `active` quanto `is_active` (migrações antigas)
+      .or('active.eq.true,is_active.eq.true')
       .order('name');
     
     if (error) throw error; // ⚠️ Lança o erro original do Supabase (com details, code, hint)

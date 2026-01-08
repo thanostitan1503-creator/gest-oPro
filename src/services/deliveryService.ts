@@ -31,6 +31,20 @@ export const deliveryService = {
   },
 
   /**
+   * 2b. Listar todos os setores ativos
+   */
+  async getSectors(): Promise<DeliverySector[]> {
+    const { data, error } = await supabase
+      .from('delivery_sectors')
+      .select('*')
+      .eq('is_active', true)
+      .order('name');
+
+    if (error) throw new Error(`Erro ao listar setores: ${error.message}`);
+    return data || [];
+  },
+
+  /**
    * 2. Listar setores de uma zona
    */
   async getSectorsByZone(zoneId: string): Promise<DeliverySector[]> {

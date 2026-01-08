@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Barcode, FileText, Link as LinkIcon, Loader2, Save, X } from 'lucide-react';
-import type { Boleto } from '../../types/boleto';
-// ⚠️ REMOVIDO v3.0: import * as boletosRepo from '../../repositories/boletosRepo';
+import { Barcode, Link as LinkIcon, Loader2, Save, X } from 'lucide-react';
+import type { Boleto } from '@/types/boleto';
+import { boletoService } from '@/services/boletoService';
 
 type BoletoModalProps = {
   isOpen: boolean;
@@ -13,8 +13,8 @@ type BoletoModalProps = {
 };
 
 const EMPTY_FORM = {
+  amount: '',
   bank_name: '',
-  wallet: '',
   barcode: '',
   digitable_line: '',
   pdf_url: '',
@@ -40,8 +40,8 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
     if (!isOpen) return;
     if (initialBoleto) {
       setForm({
+        amount: Number(initialBoleto.amount || 0).toFixed(2),
         bank_name: initialBoleto.bank_name ?? '',
-        wallet: initialBoleto.wallet ?? '',
         barcode: initialBoleto.barcode ?? '',
         digitable_line: initialBoleto.digitable_line ?? '',
         pdf_url: initialBoleto.pdf_url ?? '',
@@ -62,29 +62,39 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
   const handleSave = async () => {
     setErrorMsg(null);
 
-    if (!form.bank_name || !form.wallet || !form.barcode || !form.digitable_line) {
-      setErrorMsg('Preencha banco, carteira, nosso número e linha digitável.');
+    const amountValue = Number(form.amount.replace(',', '.'));
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      setErrorMsg('Informe um valor valido.');
+      return;
+    }
+
+    if (!form.bank_name || !form.digitable_line) {
+      setErrorMsg('Preencha banco e linha digitavel.');
       return;
     }
 
     try {
       setSaving(true);
-      const payload: Partial<Boleto> & { receivable_id: string } = {
-        ...form,
+      const payload = {
+        id: initialBoleto?.id,
         receivable_id: receivableId,
+        amount: amountValue,
+        bank_name: form.bank_name.trim() || null,
+        barcode: form.barcode.trim() || null,
+        digitable_line: form.digitable_line.trim(),
+        pdf_url: form.pdf_url.trim() || null,
         status: form.status || 'PENDENTE',
         due_date: form.due_date || null,
+        issue_date: initialBoleto?.issue_date ?? null,
       };
 
-      const saved = isEditing && initialBoleto
-        ? await boletosRepo.update({ ...payload, id: initialBoleto.id })
-        : await boletosRepo.create(payload);
+      const saved = await boletoService.upsert(payload);
 
-      onSaved?.(saved);
+      onSaved?.(saved as Boleto);
       onClose();
     } catch (err) {
       console.error(err);
-      setErrorMsg('Não foi possível salvar o boleto. Tente novamente.');
+      setErrorMsg('Nao foi possivel salvar o boleto. Tente novamente.');
     } finally {
       setSaving(false);
     }
@@ -99,7 +109,7 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
               <Barcode className="h-5 w-5 text-yellow-500" />
             </div>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-widest text-txt-muted">Gestão de Boleto</p>
+              <p className="text-[11px] font-black uppercase tracking-widest text-txt-muted">Gestao de Boleto</p>
               <h3 className="text-lg font-black text-txt-main">
                 {isEditing ? 'Visualizar / Editar Boleto' : 'Gerar Boleto'}
               </h3>
@@ -126,6 +136,16 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1">
+              <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Valor</label>
+              <input
+                type="number"
+                className="w-full rounded-lg border border-bdr bg-app px-3 py-2 text-sm text-txt-main focus:border-yellow-600 focus:outline-none"
+                value={form.amount}
+                onChange={(e) => handleChange('amount', e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-1">
               <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Banco</label>
               <input
                 className="w-full rounded-lg border border-bdr bg-app px-3 py-2 text-sm text-txt-main focus:border-yellow-600 focus:outline-none"
@@ -134,29 +154,20 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
                 placeholder="Ex: Banco do Brasil"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Carteira</label>
-              <input
-                className="w-full rounded-lg border border-bdr bg-app px-3 py-2 text-sm text-txt-main focus:border-yellow-600 focus:outline-none"
-                value={form.wallet}
-                onChange={(e) => handleChange('wallet', e.target.value)}
-                placeholder="Ex: 17/019"
-              />
-            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1">
-              <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Nosso Número / Código de Barras</label>
+              <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Codigo de barras</label>
               <input
                 className="w-full rounded-lg border border-bdr bg-app px-3 py-2 text-sm text-txt-main focus:border-yellow-600 focus:outline-none"
                 value={form.barcode}
                 onChange={(e) => handleChange('barcode', e.target.value)}
-                placeholder="Identificador do título"
+                placeholder="Identificador"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Linha Digitável</label>
+              <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Linha Digitavel</label>
               <input
                 className="w-full rounded-lg border border-bdr bg-app px-3 py-2 text-sm text-txt-main focus:border-yellow-600 focus:outline-none"
                 value={form.digitable_line}
@@ -208,21 +219,14 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
                   onChange={(e) => handleChange('status', e.target.value)}
                 >
                   <option value="PENDENTE">Pendente</option>
-                  <option value="REGISTRADO">Registrado</option>
+                  <option value="GERADO">Gerado</option>
+                  <option value="ENVIADO">Enviado</option>
                   <option value="PAGO">Pago</option>
                   <option value="CANCELADO">Cancelado</option>
                 </select>
               </div>
             </div>
           </div>
-
-          {initialBoleto?.digitable_line && (
-            <div className="rounded-lg border border-bdr bg-app px-4 py-3 text-sm text-txt-muted flex items-center gap-2">
-              <FileText className="h-4 w-4 text-yellow-500" />
-              <span className="font-semibold text-txt-main">Linha atual:</span>
-              <span className="font-mono text-xs break-all">{initialBoleto.digitable_line}</span>
-            </div>
-          )}
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-bdr px-6 py-4">
@@ -236,16 +240,13 @@ export const BoletoModal: React.FC<BoletoModalProps> = ({
           <button
             onClick={handleSave}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-black uppercase tracking-wide text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-black uppercase tracking-wide text-black transition-colors hover:bg-yellow-600 disabled:opacity-50"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isEditing ? 'Salvar alterações' : 'Gerar boleto'}
+            Salvar boleto
           </button>
         </div>
       </div>
     </div>
   );
 };
-
-
-

@@ -10,13 +10,19 @@ interface PaymentMethodsListProps {
   onDelete: (id: string) => void;
 }
 
+const methodKindLabels: Record<PaymentMethod['method_kind'], string> = {
+  CASH: 'Dinheiro',
+  PIX: 'Pix',
+  CARD: 'Cartao',
+  FIADO: 'Fiado',
+  BOLETO: 'Boleto',
+  VALE: 'Vale',
+  OTHER: 'Outros',
+};
+
 const receiptLabels: Record<PaymentMethod['receipt_type'], string> = {
-  cash: 'Dinheiro',
-  card: 'Cartao',
-  pix: 'Pix',
-  fiado: 'Fiado/Boleto',
-  boleto: 'Boleto',
-  other: 'Outros',
+  IMMEDIATE: 'Imediato',
+  DEFERRED: 'A prazo',
 };
 
 export function PaymentMethodsList({ methods, configs, deposits, onEdit, onDelete }: PaymentMethodsListProps) {
@@ -38,6 +44,7 @@ export function PaymentMethodsList({ methods, configs, deposits, onEdit, onDelet
         const activeCount = activeConfigs.length;
         const dueDays = activeConfigs.map((config) => config.due_days).filter((days) => days > 0);
         const dueLabel = (() => {
+          if (method.receipt_type === 'IMMEDIATE') return '0d';
           if (dueDays.length === 0) return '0d';
           const min = Math.min(...dueDays);
           const max = Math.max(...dueDays);
@@ -72,7 +79,10 @@ export function PaymentMethodsList({ methods, configs, deposits, onEdit, onDelet
 
             <div className="flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-wide">
               <span className="px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                {receiptLabels[method.receipt_type] ?? 'Tipo'}
+                {methodKindLabels[method.method_kind] ?? 'Metodo'}
+              </span>
+              <span className="px-2 py-1 rounded-full bg-sky-500/10 text-sky-600 border border-sky-500/20">
+                {receiptLabels[method.receipt_type] ?? 'Recebimento'}
               </span>
               <span
                 className={`px-2 py-1 rounded-full border ${method.generates_receivable ? 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' : 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}
@@ -88,7 +98,7 @@ export function PaymentMethodsList({ methods, configs, deposits, onEdit, onDelet
             </div>
 
             <div className="flex items-center gap-2 text-sm font-black">
-              {activeCount > 0 ? (
+              {method.is_active ? (
                 <span className="flex items-center gap-1 text-emerald-600">
                   <CheckCircle2 className="w-4 h-4" /> ATIVO
                 </span>

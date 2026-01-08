@@ -6,14 +6,16 @@ import { Maquininha, Deposit } from '@/domain/types';
 import { PaymentMethod, PaymentMethodDepositConfig } from '@/types';
 import {
   deleteMachine,
-  deletePaymentMethod,
   listMachines,
-  listPaymentMethods,
-  listPaymentMethodDepositConfigs,
   listDeposits,
   recordAudit,
   upsertMachine,
 } from '@/utils/legacyHelpers';
+import {
+  deletePaymentMethod,
+  listPaymentMethods,
+  listPaymentMethodDepositConfigs,
+} from '@/services';
 // ⚠️ REMOVIDO v3.0 (use Services):
 // import {
 //   deleteMachine,
@@ -394,5 +396,4 @@ export const SalesModalitiesModule: React.FC<SalesModalitiesModuleProps> = ({ on
     </div>
   );
 };
-
 

@@ -294,10 +294,14 @@ export interface Maquininha {
   ativo: boolean;
 }
 
+export type PaymentMethodKind = 'CASH' | 'PIX' | 'CARD' | 'FIADO' | 'BOLETO' | 'VALE' | 'OTHER';
+export type PaymentReceiptType = 'IMMEDIATE' | 'DEFERRED';
+
 export type PaymentMethod = {
   id: string;                // UUID
-  name: string;              // minúsculo no banco
-  receipt_type: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other';
+  name: string;              // min£sculo no banco
+  method_kind: PaymentMethodKind;
+  receipt_type: PaymentReceiptType;
   generates_receivable: boolean; // true = gera contas a receber
   is_active: boolean;
   created_at?: string | null;

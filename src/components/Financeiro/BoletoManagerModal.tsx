@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Barcode, Check, Copy, ExternalLink, Loader2, Pencil, X } from 'lucide-react';
-import type { AccountsReceivable } from '@/domain/db';
-// ⚠️ REMOVIDO v3.0: import { updateReceivable } from '@/domain/repositories/receivables.repo'; (use Services)
-import type { Boleto, BoletoStatus } from '../../types/boleto';
-// ⚠️ REMOVIDO v3.0: import * as boletosRepo from '../../repositories/boletosRepo';
+import type { AccountsReceivable } from '@/services/financialService';
+import { financialService } from '@/services/financialService';
+import { boletoService } from '@/services/boletoService';
+import type { Boleto, BoletoStatus } from '@/types/boleto';
 
 type BoletoManagerModalProps = {
   receivable: AccountsReceivable;
@@ -13,8 +13,6 @@ type BoletoManagerModalProps = {
 
 type FormState = {
   bank_name: string;
-  wallet: string;
-  our_number: string;
   barcode: string;
   digitable_line: string;
   pdf_url: string;
@@ -24,8 +22,6 @@ type FormState = {
 
 const EMPTY_FORM: FormState = {
   bank_name: '',
-  wallet: '',
-  our_number: '',
   barcode: '',
   digitable_line: '',
   pdf_url: '',
@@ -60,31 +56,35 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
   const [editing, setEditing] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const receivableAmount = Number(
+    receivable.remaining_amount ?? receivable.original_amount ?? 0
+  );
+
   useEffect(() => {
     let alive = true;
     const load = async () => {
       setLoading(true);
       setErrorMsg(null);
       try {
-        const existing = await boletosRepo.getByReceivableId(receivable.id);
+        const existing = await boletoService.getByReceivableId(receivable.id);
         if (!alive) return;
-        setBoleto(existing);
+        setBoleto(existing as Boleto | null);
         if (existing) {
           setForm({
             bank_name: existing.bank_name ?? '',
-            wallet: existing.wallet ?? '',
-            our_number: existing.our_number ?? '',
             barcode: existing.barcode ?? '',
             digitable_line: existing.digitable_line ?? '',
             pdf_url: existing.pdf_url ?? '',
-            status: existing.status ?? 'PENDENTE',
-            due_date: formatDateInput(existing.due_date) || formatDateInput(new Date(receivable.vencimento_em).toISOString()),
+            status: (existing.status as BoletoStatus) ?? 'PENDENTE',
+            due_date:
+              formatDateInput(existing.due_date) ||
+              formatDateInput(receivable.due_date),
           });
           setEditing(false);
         } else {
           setForm({
             ...EMPTY_FORM,
-            due_date: formatDateInput(new Date(receivable.vencimento_em).toISOString()),
+            due_date: formatDateInput(receivable.due_date),
           });
           setEditing(true);
         }
@@ -101,10 +101,10 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
     return () => {
       alive = false;
     };
-  }, [receivable.id, receivable.vencimento_em]);
+  }, [receivable.id, receivable.due_date]);
 
   const statusInfo = useMemo(() => {
-    const key = boleto?.status ?? 'PENDENTE';
+    const key = (boleto?.status as BoletoStatus) ?? 'PENDENTE';
     return statusMeta[key];
   }, [boleto?.status]);
 
@@ -114,29 +114,34 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
 
   const handleSave = async () => {
     setErrorMsg(null);
-    if (!form.bank_name || !form.wallet || !form.our_number || !form.digitable_line) {
-      setErrorMsg('Preencha banco, carteira, nosso numero e linha digitavel.');
+    if (!form.bank_name || !form.digitable_line) {
+      setErrorMsg('Preencha banco e linha digitavel.');
+      return;
+    }
+
+    if (!Number.isFinite(receivableAmount) || receivableAmount <= 0) {
+      setErrorMsg('Valor do boleto invalido.');
       return;
     }
 
     try {
       setSaving(true);
-      const payload: Partial<Boleto> = {
+      const payload = {
         id: boleto?.id,
         receivable_id: receivable.id,
-        bank_name: form.bank_name.trim(),
-        wallet: form.wallet.trim(),
-        our_number: form.our_number.trim(),
+        amount: receivableAmount,
+        bank_name: form.bank_name.trim() || null,
         barcode: form.barcode.trim() || null,
         digitable_line: form.digitable_line.trim(),
         pdf_url: form.pdf_url.trim() || null,
         status: form.status || 'PENDENTE',
-        due_date: form.due_date || null,
+        due_date: form.due_date || receivable.due_date || null,
+        issue_date: boleto?.issue_date ?? null,
       };
-      const saved = await boletosRepo.upsert(payload);
-      setBoleto(saved);
+      const saved = await boletoService.upsert(payload);
+      setBoleto(saved as Boleto);
       setEditing(false);
-      onSaved?.(saved);
+      onSaved?.(saved as Boleto);
     } catch (err) {
       console.error(err);
       setErrorMsg('Nao foi possivel salvar o boleto.');
@@ -161,13 +166,14 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
     setErrorMsg(null);
     try {
       setActionLoading(true);
-      const updated = await boletosRepo.updateStatus(boleto.id, 'PAGO');
-      await updateReceivable(receivable.id, {
-        status: 'PAGO',
-        valor_pago: receivable.valor_total,
-      });
-      setBoleto(updated);
-      onSaved?.(updated);
+      const updated = await boletoService.updateStatus(boleto.id, 'PAGO');
+      await financialService.markReceivableAsPaid(
+        receivable.id,
+        null,
+        Number(receivableAmount || 0)
+      );
+      setBoleto(updated as Boleto);
+      onSaved?.(updated as Boleto);
     } catch (err) {
       console.error(err);
       setErrorMsg('Nao foi possivel marcar como pago.');
@@ -190,10 +196,11 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
                 {editing || !boleto ? 'Cadastrar boleto' : 'Resumo do boleto'}
               </h3>
               <p className="text-xs text-txt-muted font-semibold">
-                Conta: {receivable.description || receivable.devedor_nome || 'Conta'}
+                Conta: {receivable.notes || receivable.client_name || 'Conta'}
               </p>
               <p className="text-[11px] text-txt-muted">
-                Valor {formatCurrency(receivable.valor_total)} | Venc. {new Date(receivable.vencimento_em).toLocaleDateString('pt-BR')}
+                Valor {formatCurrency(Number(receivableAmount || 0))} | Venc.{' '}
+                {receivable.due_date ? new Date(receivable.due_date).toLocaleDateString('pt-BR') : '-'}
               </p>
             </div>
           </div>
@@ -233,27 +240,6 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
                       value={form.bank_name}
                       onChange={(e) => handleChange('bank_name', e.target.value)}
                       placeholder="Banco do Brasil"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Carteira</label>
-                    <input
-                      className="w-full rounded-lg border border-bdr bg-app px-3 py-2 text-sm text-txt-main focus:border-yellow-600 focus:outline-none"
-                      value={form.wallet}
-                      onChange={(e) => handleChange('wallet', e.target.value)}
-                      placeholder="17/019"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wide text-txt-muted">Nosso numero</label>
-                    <input
-                      className="w-full rounded-lg border border-bdr bg-app px-3 py-2 text-sm text-txt-main focus:border-yellow-600 focus:outline-none"
-                      value={form.our_number}
-                      onChange={(e) => handleChange('our_number', e.target.value)}
-                      placeholder="Identificador principal"
                     />
                   </div>
                   <div className="space-y-1">
@@ -320,16 +306,18 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
                   <div className="rounded-xl border border-bdr bg-app p-4">
                     <div className="text-xs font-bold uppercase tracking-wide text-txt-muted">Banco</div>
                     <div className="text-sm font-black text-txt-main">{boleto.bank_name || '-'}</div>
-                    <div className="mt-3 text-xs font-bold uppercase tracking-wide text-txt-muted">Carteira</div>
-                    <div className="text-sm font-semibold text-txt-main">{boleto.wallet || '-'}</div>
+                    <div className="mt-3 text-xs font-bold uppercase tracking-wide text-txt-muted">Codigo de barras</div>
+                    <div className="text-sm font-semibold text-txt-main">{boleto.barcode || '-'}</div>
                   </div>
                   <div className="rounded-xl border border-bdr bg-app p-4">
                     <div className="text-xs font-bold uppercase tracking-wide text-txt-muted">Status</div>
                     <div className={`inline-flex items-center rounded border px-2 py-1 text-[10px] font-black uppercase ${statusInfo.badge}`}>
                       {statusInfo.label}
                     </div>
-                    <div className="mt-3 text-xs font-bold uppercase tracking-wide text-txt-muted">Nosso numero</div>
-                    <div className="text-lg font-black text-txt-main">{boleto.our_number || '-'}</div>
+                    <div className="mt-3 text-xs font-bold uppercase tracking-wide text-txt-muted">Valor</div>
+                    <div className="text-lg font-black text-txt-main">
+                      {formatCurrency(Number(boleto.amount || 0))}
+                    </div>
                   </div>
                 </div>
 
@@ -350,13 +338,15 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div>
-                      <div className="text-xs font-bold uppercase tracking-wide text-txt-muted">Codigo de barras</div>
-                      <div className="text-sm text-txt-main">{boleto.barcode || '-'}</div>
-                    </div>
-                    <div>
                       <div className="text-xs font-bold uppercase tracking-wide text-txt-muted">Vencimento</div>
                       <div className="text-sm text-txt-main">
                         {boleto.due_date ? new Date(boleto.due_date).toLocaleDateString('pt-BR') : '-'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wide text-txt-muted">Emissao</div>
+                      <div className="text-sm text-txt-main">
+                        {boleto.issue_date ? new Date(boleto.issue_date).toLocaleDateString('pt-BR') : '-'}
                       </div>
                     </div>
                   </div>
@@ -384,7 +374,7 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
                   <button
                     onClick={handleMarkPaid}
                     className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-xs font-black uppercase tracking-wide text-white hover:bg-green-700 disabled:opacity-60"
-                    disabled={actionLoading || boleto.status === 'PAGO'}
+                    disabled={actionLoading || boleto?.status === 'PAGO'}
                   >
                     {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     Marcar como pago
@@ -418,6 +408,3 @@ export const BoletoManagerModal: React.FC<BoletoManagerModalProps> = ({
     </div>
   );
 };
-
-
-

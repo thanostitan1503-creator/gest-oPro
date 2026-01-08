@@ -1,6 +1,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
+import { toast } from 'sonner';
+import { deliveryService } from '@/services';
+import { normalizeDateForSupabase } from '@/utils/date';
 import { X, User, Phone, Calendar, CreditCard, Save, MapPin, Map } from 'lucide-react';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 
@@ -20,9 +22,33 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({ onClose, onSave 
     deliveryZoneId: ''
   });
   const [zoneLockedByUser, setZoneLockedByUser] = useState(false);
+  const [deliveryZones, setDeliveryZones] = useState<any[]>([]);
+  const [deliverySectors, setDeliverySectors] = useState<any[]>([]);
+  const [loadingZones, setLoadingZones] = useState(true);
 
-  const deliveryZones = useLiveQuery(() => db.delivery_zones?.toArray(), []) || [];
-  const deliverySectors = useLiveQuery(() => db.delivery_zones?.toArray(), []) || [];
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [zones, sectors] = await Promise.all([
+          deliveryService.getZones(),
+          deliveryService.getSectors()
+        ]);
+        if (!mounted) return;
+        setDeliveryZones(zones || []);
+        setDeliverySectors(sectors || []);
+      } catch (err) {
+        console.error('Erro ao carregar zonas/setores:', err);
+        toast.error('Erro ao carregar zonas de entrega');
+      } finally {
+        if (mounted) setLoadingZones(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const normalizeText = (value: string) =>
     value
@@ -104,7 +130,7 @@ export const NewClientModal: React.FC<NewClientModalProps> = ({ onClose, onSave 
       telefone: (formData.phone || '').trim(),
       phone: (formData.phone || '').trim(),
       cpf: (formData.cpf || '').trim(),
-      dataNascimento: formData.birthDate || '',
+      dataNascimento: normalizeDateForSupabase(formData.birthDate),
       deliveryZoneId: formData.deliveryZoneId || null,
     };
 

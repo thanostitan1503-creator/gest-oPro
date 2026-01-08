@@ -33,6 +33,8 @@ import { BoletoManagerModal } from '@/components/Financeiro/BoletoManagerModal';
 import type { Boleto } from '@/types/boleto';
 // ⚠️ REMOVIDO v3.0: import * as boletosRepo from '@/repositories/boletosRepo';
 import { useShift } from '@/contexts/ShiftContext';
+import { financialService, type AccountsReceivable, type ReceivablePayment } from '@/services/financialService';
+import { boletoService } from '@/services/boletoService';
 // ⚠️ REMOVIDO v3.0: import { normalizeDepositId } from '@/domain/utils/dataSanitizer';
 import { db, useLiveQuery, normalizeDepositId } from '@/utils/legacyHelpers';
 
@@ -54,7 +56,6 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethodId, setPaymentMethodId] = useState('');
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [paymentObs, setPaymentObs] = useState('');
   const [newDueDate, setNewDueDate] = useState('');
   const [installmentAmount, setInstallmentAmount] = useState('');
   const [installmentDue, setInstallmentDue] = useState(() => new Date().toISOString().slice(0, 10));
@@ -67,11 +68,11 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     plus30.setDate(plus30.getDate() + 30);
     return plus30.toISOString().slice(0, 10);
   });
+  const [receivables, setReceivables] = useState<AccountsReceivable[]>([]);
+  const [receivablePayments, setReceivablePayments] = useState<ReceivablePayment[]>([]);
 
   const financialSettings = useLiveQuery(() => db.financial_settings?.toCollection().first(), []);
-  const receivables = useLiveQuery(() => db.accounts_receivable?.toArray(), []);
   const paymentMethods = useLiveQuery(() => db.payment_methods?.toArray(), []);
-  const receivablePayments = useLiveQuery(() => (detailId ? db.receivable_payments?.where('receivable_id').equals(detailId).toArray() : []), [detailId]);
   const auditOrdersRaw = useLiveQuery(() => db.service_orders?.toArray(), []);
   const auditEmployeesRaw = useLiveQuery(() => db.employees?.toArray(), []);
   const auditDepositsRaw = useLiveQuery(() => db.deposits?.toArray(), []);
@@ -100,6 +101,52 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
       setConfig(JSON.parse(saved));
     }
   }, []);
+
+  const refreshReceivables = async () => {
+    try {
+      const data = await financialService.listReceivables();
+      setReceivables(data || []);
+    } catch (err) {
+      console.error('Erro ao carregar recebiveis', err);
+      setReceivables([]);
+    }
+  };
+
+  const refreshReceivablePayments = async (receivableId: string | null) => {
+    if (!receivableId) {
+      setReceivablePayments([]);
+      return;
+    }
+    try {
+      const data = await financialService.listReceivablePayments(receivableId);
+      setReceivablePayments(data || []);
+    } catch (err) {
+      console.error('Erro ao carregar pagamentos', err);
+      setReceivablePayments([]);
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      await refreshReceivables();
+    };
+    if (alive) void load();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      await refreshReceivablePayments(detailId);
+    };
+    if (alive) void load();
+    return () => {
+      alive = false;
+    };
+  }, [detailId]);
 
   // Helper function to render tab buttons
   const TabButton = ({ id, label, icon: Icon }: { id: TabType; label: string; icon: any }) => (
@@ -253,15 +300,24 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
   const auditDeposits = auditDepositsRaw ?? [];
   const auditClients = auditClientsRaw ?? [];
 
+  const getOriginal = (r: AccountsReceivable) => Number(r.original_amount ?? 0);
+  const getPaid = (r: AccountsReceivable) => Number(r.paid_amount ?? 0);
+  const getRemaining = (r: AccountsReceivable) =>
+    Number(r.remaining_amount ?? Math.max(0, getOriginal(r) - getPaid(r)));
+  const getDueMs = (r: AccountsReceivable) => {
+    if (!r.due_date) return NaN;
+    const ms = new Date(`${r.due_date}T00:00:00`).getTime();
+    return Number.isNaN(ms) ? NaN : ms;
+  };
+
   const receivableItems = (receivables || []).map((r) => {
-    const total = Number(r.valor_total ?? 0);
-    const paid = Number(r.valor_pago ?? 0);
-    const remaining = Math.max(0, total - paid);
-    const due = r.vencimento_em;
-    const overdue = due < Date.now() && remaining > 0;
-    const status = overdue ? 'VENCIDO' : r.status;
-    const requiresBoleto = (r as any).requires_boleto ?? false;
-    return { ...r, total, paid, remaining, overdue, status, requires_boleto: requiresBoleto };
+    const total = getOriginal(r);
+    const paid = getPaid(r);
+    const remaining = getRemaining(r);
+    const dueMs = getDueMs(r);
+    const overdue = Number.isFinite(dueMs) && dueMs < Date.now() && remaining > 0;
+    const status = overdue ? 'ATRASADO' : (r.status ?? 'PENDENTE');
+    return { ...r, total, paid, remaining, dueMs, overdue, status };
   });
 
   const paymentMethodMap = new Map((paymentMethods || []).map((m) => [m.id, m.name ?? m.nome]));
@@ -271,11 +327,11 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     ? receivableItems.find((r) => r.id === selectedBoletoReceivableId) || null
     : null;
 
-  const receivableListFiltered = receivableItems.filter((r) => {
-    if (!Number.isFinite(r.vencimento_em)) return false;
-    if (startMs && r.vencimento_em < startMs) return false;
-    if (endMs && r.vencimento_em > endMs + 24 * 60 * 60 * 1000) return false;
-    if (receivableFilter === 'personal' && !r.is_personal) return false;
+  const receivableListFiltered = receivableItems.filter((r: any) => {
+    if (!Number.isFinite(r.dueMs)) return false;
+    if (startMs && r.dueMs < startMs) return false;
+    if (endMs && r.dueMs > endMs + 24 * 60 * 60 * 1000) return false;
+    if (receivableFilter === 'personal' && r.client_id) return false;
     if (receivableFilter === 'with-client' && !r.client_id) return false;
     return true;
   });
@@ -293,7 +349,6 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     let alive = true;
     const loadBoletos = async () => {
       const pendingIds = receivableListFiltered
-        .filter((r) => r.requires_boleto)
         .map((r) => r.id)
         .filter((id) => !Object.prototype.hasOwnProperty.call(boletoCache, id));
       if (!pendingIds.length) return;
@@ -301,7 +356,7 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
       const results = await Promise.all(
         pendingIds.map(async (id) => {
           try {
-            const existing = await boletosRepo.getByReceivableId(id);
+            const existing = await boletoService.getByReceivableId(id);
             return { id, boleto: existing, ok: true };
           } catch (err) {
             return { id, boleto: null, ok: false };
@@ -349,6 +404,7 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
   };
 
   const handleBoletoSaved = (boleto: Boleto) => {
+    if (!boleto.receivable_id) return;
     setBoletoCache((prev) => ({ ...prev, [boleto.receivable_id]: boleto }));
   };
 
@@ -357,16 +413,24 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     setSelectedBoletoReceivableId(null);
   };
 
-  const payAll = async (id: string, methodId?: string, paidDate?: string, obs?: string) => {
+  const payAll = async (id: string, methodId?: string, paidDate?: string) => {
     const r = receivableItems.find((x) => x.id === id);
     if (!r) return;
     const remaining = r.remaining;
     if (remaining <= 0) return alert('Nada pendente para quitar.');
     const paidAt = paidDate ? new Date(`${paidDate}T00:00:00`).getTime() : undefined;
-    await addReceivablePayment(id, remaining, 'user-1', methodId || null, paidAt, obs);
+    await financialService.addReceivablePayment({
+      receivableId: id,
+      amount: remaining,
+      paymentMethod: methodId || null,
+      paidAt,
+      userId: activeShift?.user_id ?? null,
+    });
+    await refreshReceivables();
+    if (detailId === id) await refreshReceivablePayments(id);
   };
 
-  const payPartial = async (id: string, valueStr: string, methodId?: string, paidDate?: string, obs?: string) => {
+  const payPartial = async (id: string, valueStr: string, methodId?: string, paidDate?: string) => {
     const r = receivableItems.find((x) => x.id === id);
     if (!r) return;
     const remaining = r.remaining;
@@ -374,13 +438,22 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     if (!Number.isFinite(val) || val <= 0) return alert('Valor inválido.');
     if (val > remaining) return alert('Valor maior que o pendente.');
     const paidAt = paidDate ? new Date(`${paidDate}T00:00:00`).getTime() : undefined;
-    await addReceivablePayment(id, val, 'user-1', methodId || null, paidAt, obs);
+    await financialService.addReceivablePayment({
+      receivableId: id,
+      amount: val,
+      paymentMethod: methodId || null,
+      paidAt,
+      userId: activeShift?.user_id ?? null,
+    });
+    await refreshReceivables();
+    if (detailId === id) await refreshReceivablePayments(id);
   };
 
   const changeDueDate = async (id: string, dateStr: string) => {
     const dueMs = new Date(dateStr + 'T00:00:00').getTime();
     if (!Number.isFinite(dueMs)) return alert('Data inválida.');
-    await updateReceivable(id, { vencimento_em: dueMs });
+    await financialService.updateReceivable(id, { due_date: dateStr });
+    await refreshReceivables();
     setNewDueDate('');
     adjustDateRangeForDue(dueMs);
   };
@@ -391,22 +464,21 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     const dueMs = new Date(dueStr + 'T00:00:00').getTime();
     if (!Number.isFinite(val) || val <= 0) return alert('Valor inválido.');
     if (!Number.isFinite(dueMs)) return alert('Data inválida.');
-    const created = await createReceivable({
-      os_id: base.os_id ?? null,
-      payment_method_id: null,
-      depositoId: normalizeDepositId(base).depositoId,
-      devedor_nome: base.devedor_nome ?? base.description ?? 'Cliente',
-      valor_total: val,
-      status: 'ABERTO',
-      criado_em: Date.now(),
-      vencimento_em: dueMs,
-      description: base.description ?? null,
+    const created = await financialService.createReceivable({
+      order_id: base.order_id ?? null,
+      deposit_id: base.deposit_id ?? normalizeDepositId(base).depositoId,
       client_id: base.client_id ?? null,
-      is_personal: base.is_personal ?? false,
-      alert_days_before: base.alert_days_before ?? 1,
-      installment_no: (base.installment_no ?? 1) + 1,
-      installments_total: base.installments_total ?? 1,
+      client_name: base.client_name ?? 'Cliente',
+      original_amount: val,
+      paid_amount: 0,
+      remaining_amount: val,
+      status: 'PENDENTE',
+      due_date: new Date(dueMs).toISOString().split('T')[0],
+      notes: base.notes ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     });
+    await refreshReceivables();
     setInstallmentAmount('');
     adjustDateRangeForDue(dueMs);
     if (created?.id) setDetailId(created.id);
@@ -420,31 +492,39 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     const paidAt = paymentDate ? new Date(`${paymentDate}T00:00:00`).getTime() : undefined;
 
     if (editingPaymentId) {
-      const original = (receivablePayments || []).find((p) => p.id === editingPaymentId);
-      const editNote = original
-        ? `editado de ${original.valor} para ${val} em ${new Date().toLocaleString('pt-BR')}`
-        : 'editado';
-      const mergedObs = [paymentObs || null, editNote].filter(Boolean).join(' | ');
-      await updateReceivablePayment(editingPaymentId, {
-        valor: val,
-        data_hora: paidAt ?? Date.now(),
-        payment_method_id: paymentMethodId || null,
-        obs: mergedObs || null,
-      }, 'user-1');
+      await financialService.updateReceivablePayment(editingPaymentId, {
+        amount: val,
+        paymentMethod: paymentMethodId || null,
+        paidAt: paidAt ?? null,
+        userId: activeShift?.user_id ?? null,
+      });
     } else {
-      await addReceivablePayment(selectedReceivable.id, val, 'user-1', paymentMethodId || null, paidAt, paymentObs);
+      await financialService.addReceivablePayment({
+        receivableId: selectedReceivable.id,
+        amount: val,
+        paymentMethod: paymentMethodId || null,
+        paidAt,
+        userId: activeShift?.user_id ?? null,
+      });
     }
+
+    await refreshReceivables();
+    await refreshReceivablePayments(selectedReceivable.id);
 
     setPaymentAmount('');
     setPaymentMethodId('');
-    setPaymentObs('');
     setEditingPaymentId(null);
   };
 
 
   const removeReceivable = async (id: string) => {
     if (!confirm('Excluir esta conta a receber?')) return;
-    await deleteReceivable(id);
+    await financialService.deleteReceivable(id);
+    await refreshReceivables();
+    if (detailId === id) {
+      setDetailId(null);
+      setReceivablePayments([]);
+    }
   };
 
   const handleManualCashFlow = async (category: 'SANGRIA' | 'SUPRIMENTO') => {
@@ -455,14 +535,15 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     const amount = Number(valueStr.replace(',', '.'));
     if (!Number.isFinite(amount) || amount <= 0) return alert('Valor invalido.');
     const notes = prompt('Observacao (opcional)') || null;
-    await registerCashFlow({
+    await financialService.registerCashFlow({
       category,
       amount,
       direction: category === 'SANGRIA' ? 'OUT' : 'IN',
       paymentType: 'cash',
       notes,
       depositId: normalizeDepositId(activeShift).depositoId,
-      userName: undefined,
+      userId: activeShift?.user_id ?? null,
+      shiftId: activeShift?.id ?? null,
     });
   };
 
@@ -1397,23 +1478,23 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
                     </thead>
                     <tbody className="divide-y divide-bdr">
                       {receivableListFiltered
-                        .sort((a, b) => (a.vencimento_em || 0) - (b.vencimento_em || 0))
+                        .sort((a, b) => (a.dueMs || 0) - (b.dueMs || 0))
                         .map((r) => {
                           const boletoEntry = boletoCache[r.id];
                           return (
                             <tr key={r.id} className="hover:bg-app transition-colors">
                               <td className="px-4 py-3">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="font-bold text-txt-main">{r.description || r.devedor_nome || 'Conta'}</span>
-                                  {r.requires_boleto && (
+                                  <span className="font-bold text-txt-main">{r.notes || r.client_name || 'Conta'}</span>
+                                  {boletoEntry && (
                                     <span className="px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-[10px] font-black uppercase tracking-wide text-amber-400">
                                       Boleto
                                     </span>
                                   )}
                                 </div>
-                                {r.devedor_nome && <div className="text-xs text-txt-muted">{r.devedor_nome}</div>}
+                                {r.client_name && <div className="text-xs text-txt-muted">{r.client_name}</div>}
                               </td>
-                            <td className="px-4 py-3 text-txt-muted">{new Date(r.vencimento_em).toLocaleDateString('pt-BR')}</td>
+                            <td className="px-4 py-3 text-txt-muted">{Number.isFinite(r.dueMs) ? new Date(r.dueMs).toLocaleDateString('pt-BR') : '-'}</td>
                             <td className="px-4 py-3 text-right font-semibold">{formatCurrency(r.total)}</td>
                             <td className="px-4 py-3 text-right text-txt-muted">{formatCurrency(r.paid)}</td>
                             <td className="px-4 py-3 text-right font-black text-green-500">{formatCurrency(r.remaining)}</td>
@@ -1425,7 +1506,7 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
                               </span>
                             </td>
                             <td className="px-4 py-3 text-center">
-                              {r.is_personal ? (
+                              {!r.client_id ? (
                                 <span className="px-2 py-1 rounded bg-purple-500/10 text-purple-500 text-[10px] font-black uppercase border border-purple-500/20">
                                   Pessoal
                                 </span>
@@ -1437,19 +1518,17 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
                             </td>
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-2">
-                                {r.requires_boleto ? (
-                                  <button
-                                    title={boletoEntry ? 'Ver boleto' : 'Emitir boleto'}
-                                    onClick={() => openBoletoModalFor(r.id)}
-                                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border ${getBoletoButtonTone(boletoEntry)}`}
-                                  >
-                                    <Barcode className="w-4 h-4" />
-                                    {getBoletoButtonLabel(boletoEntry)}
-                                  </button>
-                                ) : null}
+                                <button
+                                  title={boletoEntry ? 'Ver boleto' : 'Emitir boleto'}
+                                  onClick={() => openBoletoModalFor(r.id)}
+                                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold border ${getBoletoButtonTone(boletoEntry)}`}
+                                >
+                                  <Barcode className="w-4 h-4" />
+                                  {getBoletoButtonLabel(boletoEntry)}
+                                </button>
                                 <button
                                   title="Detalhes"
-                                  onClick={() => { setDetailId(r.id); setNewDueDate(new Date(r.vencimento_em).toISOString().slice(0, 10)); setPaymentAmount(''); setPaymentMethodId(''); setPaymentDate(new Date().toISOString().slice(0,10)); }}
+                                  onClick={() => { setDetailId(r.id); setNewDueDate(Number.isFinite(r.dueMs) ? new Date(r.dueMs).toISOString().slice(0, 10) : ''); setPaymentAmount(''); setPaymentMethodId(''); setPaymentDate(new Date().toISOString().slice(0,10)); }}
                                   className="px-2 py-1 rounded text-xs font-bold bg-app border border-bdr text-txt-muted"
                                 >
                                   Detalhes
@@ -1521,7 +1600,7 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
             <div className="flex items-center justify-between px-5 py-4 border-b border-bdr">
               <div>
                 <h3 className="text-lg font-black">Detalhes da Conta</h3>
-                <p className="text-xs text-txt-muted">{selectedReceivable.description || selectedReceivable.devedor_nome || 'Conta'} · Vence em {new Date(selectedReceivable.vencimento_em).toLocaleDateString('pt-BR')}</p>
+                <p className="text-xs text-txt-muted">{selectedReceivable.notes || selectedReceivable.client_name || 'Conta'} · Vence em {Number.isFinite(selectedReceivable.dueMs) ? new Date(selectedReceivable.dueMs).toLocaleDateString('pt-BR') : '-'}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => window.print()} className="px-3 py-2 rounded bg-app border border-bdr text-sm font-bold">Imprimir</button>
@@ -1557,12 +1636,6 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
                         <option key={m.id} value={m.id}>{m.name ?? m.nome}</option>
                       ))}
                     </select>
-                    <input
-                      value={paymentObs}
-                      onChange={(e) => setPaymentObs(e.target.value)}
-                      placeholder="Observações (opcional)"
-                      className="w-full p-2 rounded bg-app border border-bdr text-white"
-                    />
                     <div className="flex gap-2">
                       <button
                         onClick={savePayment}
@@ -1571,13 +1644,13 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
                         {editingPaymentId ? 'Atualizar' : 'Salvar pagamento'}
                       </button>
                       <button
-                        onClick={() => payAll(selectedReceivable.id, paymentMethodId, paymentDate, paymentObs)}
+                        onClick={() => payAll(selectedReceivable.id, paymentMethodId, paymentDate)}
                         className="flex-1 bg-green-600 text-white font-black py-2 rounded"
                       >Quitar pendente</button>
                     </div>
                     {editingPaymentId && (
                       <button
-                        onClick={() => { setEditingPaymentId(null); setPaymentAmount(''); setPaymentObs(''); }}
+                        onClick={() => { setEditingPaymentId(null); setPaymentAmount(''); }}
                         className="text-xs text-txt-muted underline"
                       >
                         Cancelar edição
@@ -1591,12 +1664,12 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
                   <div className="space-y-2">
                     <input
                       type="date"
-                      value={newDueDate || new Date(selectedReceivable.vencimento_em).toISOString().slice(0, 10)}
+                      value={newDueDate || (Number.isFinite(selectedReceivable.dueMs) ? new Date(selectedReceivable.dueMs).toISOString().slice(0, 10) : '')}
                       onChange={(e) => setNewDueDate(e.target.value)}
                       className="w-full p-2 rounded bg-app border border-bdr text-white"
                     />
                     <button
-                      onClick={() => changeDueDate(selectedReceivable.id, newDueDate || new Date(selectedReceivable.vencimento_em).toISOString().slice(0, 10))}
+                      onClick={() => changeDueDate(selectedReceivable.id, newDueDate || (Number.isFinite(selectedReceivable.dueMs) ? new Date(selectedReceivable.dueMs).toISOString().slice(0, 10) : ''))}
                       className="w-full bg-blue-600 text-white font-black py-2 rounded"
                     >Salvar nova data</button>
                   </div>
@@ -1608,27 +1681,29 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
                 {(receivablePayments && receivablePayments.length > 0) ? (
                   <div className="space-y-2">
                     {receivablePayments
-                      .sort((a, b) => b.data_hora - a.data_hora)
+                      .sort((a, b) => {
+                        const aTime = a.paid_at ? new Date(a.paid_at).getTime() : 0;
+                        const bTime = b.paid_at ? new Date(b.paid_at).getTime() : 0;
+                        return bTime - aTime;
+                      })
                       .map((p) => (
                         <div key={p.id} className="flex flex-col md:flex-row md:items-center md:justify-between text-sm bg-app rounded px-3 py-2 border border-bdr gap-2">
                           <div>
-                            <div className="font-semibold">{formatCurrency(p.valor)}</div>
+                            <div className="font-semibold">{formatCurrency(p.amount)}</div>
                             <div className="text-xs text-txt-muted">
-                              {new Date(p.data_hora).toLocaleString('pt-BR')}
-                              {p.payment_method_id ? ` · Forma: ${paymentMethodMap.get(p.payment_method_id) || p.payment_method_id}` : ''}
+                              {p.paid_at ? new Date(p.paid_at).toLocaleString('pt-BR') : '-'}
+                              {p.payment_method ? ` · Forma: ${paymentMethodMap.get(p.payment_method) || p.payment_method}` : ''}
                             </div>
-                            {p.obs && <div className="text-xs text-amber-400">Obs: {p.obs}</div>}
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-xs text-txt-muted">Usuário: {p.usuario_id}</span>
+                            <span className="text-xs text-txt-muted">Usuario: {p.user_id}</span>
                             <button
                               className="px-2 py-1 rounded text-xs font-bold bg-app border border-bdr text-txt-muted"
                               onClick={() => {
                                 setEditingPaymentId(p.id);
-                                setPaymentAmount(String(p.valor));
-                                setPaymentMethodId(p.payment_method_id || '');
-                                setPaymentDate(new Date(p.data_hora).toISOString().slice(0, 10));
-                                setPaymentObs(p.obs || '');
+                                setPaymentAmount(String(p.amount));
+                                setPaymentMethodId(p.payment_method || '');
+                                setPaymentDate(p.paid_at ? new Date(p.paid_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
                               }}
                             >
                               Editar
@@ -1671,6 +1746,7 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
       <NewReceivableModal
         isOpen={isReceivableModalOpen}
         onClose={() => setReceivableModalOpen(false)}
+        onSaved={refreshReceivables}
       />
       {isBoletoModalOpen && selectedBoletoReceivable && (
         <BoletoManagerModal
@@ -1683,6 +1759,4 @@ export const FinancialModule: React.FC<FinancialModuleProps> = ({ onClose, onNav
     </div>
   );
 };
-
-
 

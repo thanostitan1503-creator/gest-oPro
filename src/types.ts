@@ -1,9 +1,13 @@
 // Tipos canônicos alinhados ao schema atual do banco
 
+export type PaymentMethodKind = 'CASH' | 'PIX' | 'CARD' | 'FIADO' | 'BOLETO' | 'VALE' | 'OTHER';
+export type PaymentReceiptType = 'IMMEDIATE' | 'DEFERRED';
+
 export interface PaymentMethod {
   id: string;
   name: string;
-  receipt_type: 'cash' | 'card' | 'pix' | 'fiado' | 'boleto' | 'other';
+  method_kind: PaymentMethodKind;
+  receipt_type: PaymentReceiptType;
   generates_receivable: boolean;
   is_active: boolean;
   created_at?: string | null;
@@ -15,7 +19,6 @@ export interface PaymentMethodDepositConfig {
   deposit_id: string;
   is_active: boolean;
   due_days: number;
-  max_installments: number;
   created_at?: string | null;
   updated_at?: string | null;
 }

@@ -12,6 +12,7 @@ import {
   UserRole, DepositoFisicoId, ModalidadeItem 
 } from '@/domain/types';
 import { supabase } from '@/utils/supabaseClient';
+import { normalizeDateForSupabase } from '@/utils/date';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 
 // ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
@@ -37,7 +38,7 @@ const listClients = async (): Promise<Cliente[]> => {
 
 const upsertClient = async (client: Partial<Cliente>): Promise<void> => {
   const nowIso = new Date().toISOString();
-  const birth = client.dataNascimento ? client.dataNascimento : null;
+  const birth = normalizeDateForSupabase(client.dataNascimento);
 
   const dbClient: any = {
     id: client.id,

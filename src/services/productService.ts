@@ -145,6 +145,8 @@ export const productService = {
   async create(product: NewProduct): Promise<Product> {
     const payload = normalizeProductPayload(product);
 
+    console.log('[productService.create] payload:', payload);
+
     // Validação de regras de negócio
     if (payload.movement_type === 'EXCHANGE' && !payload.return_product_id) {
       throw new Error('Produtos com movimento EXCHANGE devem ter produto de retorno vinculado');
@@ -230,10 +232,11 @@ export const productService = {
    * 9. Obter preço do produto em um depósito específico
    */
   async getPricing(productId: string, depositId: string): Promise<ProductPricing | null> {
+    // Preço por depósito agora é armazenado na tabela product_pricing
     const { data, error } = await supabase
-      .from('products')
-      .select('id, deposit_id, sale_price, exchange_price, full_price')
-      .eq('id', productId)
+      .from('product_pricing')
+      .select('product_id, deposit_id, price, exchange_price, full_price')
+      .eq('product_id', productId)
       .eq('deposit_id', depositId)
       .limit(1)
       .maybeSingle();
@@ -246,12 +249,12 @@ export const productService = {
     if (!data) return null;
 
     return {
-      product_id: data.id,
+      product_id: data.product_id,
       deposit_id: data.deposit_id,
-      price: data.sale_price ?? 0,
-      sale_price: data.sale_price,
-      exchange_price: data.exchange_price,
-      full_price: data.full_price,
+      price: data.price ?? 0,
+      sale_price: data.price ?? null,
+      exchange_price: data.exchange_price ?? null,
+      full_price: data.full_price ?? null,
     };
   },
 
@@ -317,68 +320,34 @@ export const productService = {
       };
     }
 
-    // 2. Verificar se já existe um produto nesse depósito (usa nome + depósito, tolerando duplicados)
-    let existingDepositProduct: Product | null = null;
-
-    if (originalProduct.deposit_id === depositId) {
-      existingDepositProduct = originalProduct as Product;
-    } else {
-      const { data: found, error: existingError } = await supabase
-        .from('products')
-        .select('*')
-        .eq('name', originalProduct.name)
-        .eq('deposit_id', depositId)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (existingError && existingError.code !== 'PGRST116') {
-        throw new Error(`Erro ao verificar produto do depósito: ${existingError.message}`);
-      }
-      existingDepositProduct = found || null;
-    }
-
+    // Em vez de clonar produtos por depósito, usamos a tabela product_pricing
     const updates = buildPriceUpdates(pricing);
-    let finalProduct: Product;
 
-    if (existingDepositProduct) {
-      // Passo B: UPDATE no produto específico do depósito
-      const { data: updated, error: updateError } = await supabase
-        .from('products')
-        .update(updates)
-        .eq('id', existingDepositProduct.id)
-        .select('id, deposit_id, sale_price, exchange_price, full_price')
-        .single();
+    // Upsert na tabela product_pricing (product_id + deposit_id é a key)
+    const pricingPayload: any = {
+      product_id: productId,
+      deposit_id: depositId,
+      price: updates.sale_price ?? updates.price ?? null,
+      exchange_price: updates.exchange_price ?? null,
+      full_price: updates.full_price ?? null,
+    };
 
-      if (updateError) throw new Error(`Erro ao atualizar preço do depósito: ${updateError.message}`);
-      finalProduct = updated as Product;
-    } else {
-      // Passo C: INSERT (clone) do produto global para o depósito
-      const { id, created_at, updated_at, ...productData } = originalProduct as any;
+    // Tentar upsert (PostgREST upsert via .upsert)
+    const { data: upserted, error: upsertError } = await supabase
+      .from('product_pricing')
+      .upsert(pricingPayload, { onConflict: ['product_id', 'deposit_id'] })
+      .select()
+      .single();
 
-      const clone: ProductInsert = {
-        ...productData,
-        deposit_id: depositId,
-        ...updates,
-      };
-
-      const { data: inserted, error: insertError } = await supabase
-        .from('products')
-        .insert([clone])
-        .select('id, deposit_id, sale_price, exchange_price, full_price')
-        .single();
-
-      if (insertError) throw new Error(`Erro ao criar entrada de preço para o depósito: ${insertError.message}`);
-      finalProduct = inserted as Product;
-    }
+    if (upsertError) throw new Error(`Erro ao gravar precificação no depósito: ${upsertError.message}`);
 
     return {
-      product_id: finalProduct.id,
-      deposit_id: finalProduct.deposit_id,
-      price: finalProduct.sale_price ?? 0,
-      sale_price: finalProduct.sale_price,
-      exchange_price: finalProduct.exchange_price,
-      full_price: finalProduct.full_price,
+      product_id: upserted.product_id,
+      deposit_id: upserted.deposit_id,
+      price: upserted.price ?? 0,
+      sale_price: upserted.price ?? upserted.sale_price ?? null,
+      exchange_price: upserted.exchange_price ?? null,
+      full_price: upserted.full_price ?? null,
     };
   },
 
@@ -427,19 +396,19 @@ export const productService = {
    */
   async listPricingByProduct(productId: string): Promise<ProductPricing[]> {
     const { data, error } = await supabase
-      .from('products')
-      .select('id, deposit_id, sale_price, exchange_price, full_price')
-      .eq('id', productId);
+      .from('product_pricing')
+      .select('product_id, deposit_id, price, exchange_price, full_price')
+      .eq('product_id', productId);
 
     if (error) throw new Error(`Erro ao listar preços do produto: ${error.message}`);
 
     return (data || []).map(row => ({
-      product_id: row.id,
+      product_id: row.product_id,
       deposit_id: row.deposit_id,
-      price: row.sale_price ?? 0,
-      sale_price: row.sale_price,
-      exchange_price: row.exchange_price,
-      full_price: row.full_price,
+      price: row.price ?? 0,
+      sale_price: row.price ?? null,
+      exchange_price: row.exchange_price ?? null,
+      full_price: row.full_price ?? null,
     }));
   },
 
@@ -448,12 +417,12 @@ export const productService = {
    */
   async removePricing(productId: string, depositId: string): Promise<void> {
     const { error } = await supabase
-      .from('products')
+      .from('product_pricing')
       .delete()
-      .eq('id', productId)
+      .eq('product_id', productId)
       .eq('deposit_id', depositId);
 
-    if (error) throw new Error(`Erro ao remover preço do depósito: ${error.message}`);
+    if (error) throw new Error(`Erro ao remover precificação do depósito: ${error.message}`);
   },
 
   // ==================== FILTROS E BUSCAS ====================
@@ -508,6 +477,7 @@ export const productService = {
    */
   async createProduct(product: ProductInsert) {
     const validatedProduct = normalizeProductPayload(product);
+    console.log('[productService.createProduct] payload:', validatedProduct);
     const { data, error } = await supabase.from('products').insert([validatedProduct]);
     if (error) throw error;
     return data;

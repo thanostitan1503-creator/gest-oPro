@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PaymentMethod, PaymentMethodDepositConfig } from '@/types';
 import { Deposit } from '@/domain/types';
-import { upsertPaymentMethod, upsertPaymentMethodDepositConfigs } from '@/utils/legacyHelpers';
+import { createPaymentMethod, updatePaymentMethod, upsertDepositConfig } from '@/services';
 import { X } from 'lucide-react';
 
 interface PaymentMethodsModalProps {
@@ -17,7 +17,6 @@ type DepositConfigDraft = {
   deposit_id: string;
   is_active: boolean;
   due_days: number;
-  max_installments: number;
 };
 
 export function PaymentMethodsModal({
@@ -29,19 +28,23 @@ export function PaymentMethodsModal({
   onSaved,
 }: PaymentMethodsModalProps) {
   const [name, setName] = useState('');
-  const [receiptType, setReceiptType] = useState<PaymentMethod['receipt_type']>('cash');
+  const [methodKind, setMethodKind] = useState<PaymentMethod['method_kind']>('CASH');
+  const [receiptType, setReceiptType] = useState<PaymentMethod['receipt_type']>('IMMEDIATE');
   const [generatesReceivable, setGeneratesReceivable] = useState(false);
+  const [isActive, setIsActive] = useState(true);
   const [depositConfigs, setDepositConfigs] = useState<DepositConfigDraft[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const isImmediateType = receiptType === 'cash' || receiptType === 'pix';
+  const isImmediateType = receiptType === 'IMMEDIATE';
 
   useEffect(() => {
     if (!isOpen) return;
     setName(initialMethod?.name ?? '');
-    const initialReceiptType = initialMethod?.receipt_type ?? 'cash';
+    setMethodKind(initialMethod?.method_kind ?? 'CASH');
+    const initialReceiptType = initialMethod?.receipt_type ?? 'IMMEDIATE';
     setReceiptType(initialReceiptType);
     setGeneratesReceivable(initialMethod?.generates_receivable ?? false);
+    setIsActive(initialMethod?.is_active ?? true);
 
     const methodId = initialMethod?.id ?? '';
     const nextConfigs = deposits.map((deposit) => {
@@ -52,7 +55,6 @@ export function PaymentMethodsModal({
         deposit_id: deposit.id,
         is_active: existing?.is_active ?? true,
         due_days: existing?.due_days ?? 0,
-        max_installments: existing?.max_installments ?? 1,
       };
     });
 
@@ -65,7 +67,10 @@ export function PaymentMethodsModal({
     }
   }, [isImmediateType]);
 
-  const canSave = useMemo(() => name.trim().length > 0 && !!receiptType, [name, receiptType]);
+  const canSave = useMemo(
+    () => name.trim().length > 0 && !!methodKind && !!receiptType,
+    [name, methodKind, receiptType]
+  );
 
   if (!isOpen) return null;
 
@@ -87,15 +92,14 @@ export function PaymentMethodsModal({
     const normalizedConfigs = depositConfigs.map((config) => ({
       ...config,
       due_days: Number(config.due_days) || 0,
-      max_installments: Math.max(1, Number(config.max_installments) || 1),
     }));
 
-    if (effectiveGeneratesReceivable) {
+    if (receiptType === 'DEFERRED') {
       const invalid = normalizedConfigs.filter(
         (config) => config.is_active && config.due_days <= 0
       );
       if (invalid.length > 0) {
-        alert('Defina um prazo em dias maior que zero para depósitos ativos.');
+        alert('Defina um prazo em dias maior que zero para depositos ativos.');
         return;
       }
     }
@@ -103,32 +107,45 @@ export function PaymentMethodsModal({
     try {
       setSaving(true);
 
-      const methodId = initialMethod?.id ?? crypto.randomUUID();
-      const configsToSave: PaymentMethodDepositConfig[] = normalizedConfigs.map((config) => ({
-        payment_method_id: methodId,
-        deposit_id: config.deposit_id,
-        is_active: config.is_active,
-        due_days: effectiveGeneratesReceivable && config.is_active ? config.due_days : 0,
-        max_installments: config.is_active ? config.max_installments : 1,
-        created_at: null,
-        updated_at: null,
-      }));
-
-      const payload: PaymentMethod = {
-        id: methodId,
+      const basePayload = {
         name: name.trim(),
+        method_kind: methodKind,
         receipt_type: receiptType,
         generates_receivable: effectiveGeneratesReceivable,
-        is_active: configsToSave.some((config) => config.is_active),
-        created_at: initialMethod?.created_at ?? null,
-        updated_at: initialMethod?.updated_at ?? null,
+        is_active: isActive,
       };
 
-      const saved = await upsertPaymentMethod(payload);
-      if (configsToSave.length > 0) {
-        await upsertPaymentMethodDepositConfigs(configsToSave);
+      const saved = initialMethod?.id
+        ? await updatePaymentMethod(initialMethod.id, {
+            ...basePayload,
+            updated_at: new Date().toISOString(),
+          })
+        : await createPaymentMethod(basePayload);
+
+      const methodId = saved.id;
+      if (normalizedConfigs.length > 0) {
+        await Promise.all(
+          normalizedConfigs.map((config) =>
+            upsertDepositConfig(config.deposit_id, methodId, {
+              is_active: config.is_active,
+              due_days: receiptType === 'DEFERRED' && config.is_active ? config.due_days : 0,
+            })
+          )
+        );
       }
-      onSaved?.(saved);
+
+      const normalizedSaved: PaymentMethod = {
+        id: saved.id,
+        name: saved.name ?? basePayload.name,
+        method_kind: (saved.method_kind ?? basePayload.method_kind) as PaymentMethod['method_kind'],
+        receipt_type: (saved.receipt_type ?? basePayload.receipt_type) as PaymentMethod['receipt_type'],
+        generates_receivable: saved.generates_receivable ?? basePayload.generates_receivable,
+        is_active: saved.is_active ?? basePayload.is_active,
+        created_at: saved.created_at ?? null,
+        updated_at: saved.updated_at ?? null,
+      };
+
+      onSaved?.(normalizedSaved);
       onClose();
     } catch (err) {
       console.error(err);
@@ -162,23 +179,46 @@ export function PaymentMethodsModal({
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-black uppercase tracking-widest text-txt-muted">Tipo</label>
-            <select
-              className="w-full bg-app border border-bdr rounded-lg px-3 py-2 text-sm font-bold text-txt-main focus:ring-2 focus:ring-emerald-500 outline-none"
-              value={receiptType}
-              onChange={(e) => setReceiptType(e.target.value as PaymentMethod['receipt_type'])}
-            >
-              <option value="cash">Dinheiro</option>
-              <option value="card">Cartao</option>
-              <option value="pix">Pix</option>
-              <option value="fiado">Fiado/Boleto</option>
-              <option value="boleto">Boleto</option>
-              <option value="other">Outro</option>
-            </select>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-black uppercase tracking-widest text-txt-muted">Categoria</label>
+              <select
+                className="w-full bg-app border border-bdr rounded-lg px-3 py-2 text-sm font-bold text-txt-main focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={methodKind}
+                onChange={(e) => setMethodKind(e.target.value as PaymentMethod['method_kind'])}
+              >
+                <option value="CASH">Dinheiro</option>
+                <option value="PIX">Pix</option>
+                <option value="CARD">Cartao</option>
+                <option value="FIADO">Fiado</option>
+                <option value="BOLETO">Boleto</option>
+                <option value="VALE">Vale</option>
+                <option value="OTHER">Outro</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-black uppercase tracking-widest text-txt-muted">Recebimento</label>
+              <select
+                className="w-full bg-app border border-bdr rounded-lg px-3 py-2 text-sm font-bold text-txt-main focus:ring-2 focus:ring-emerald-500 outline-none"
+                value={receiptType}
+                onChange={(e) => setReceiptType(e.target.value as PaymentMethod['receipt_type'])}
+              >
+                <option value="IMMEDIATE">Imediato</option>
+                <option value="DEFERRED">A prazo</option>
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm font-bold text-txt-main">
+              <input
+                type="checkbox"
+                className="w-4 h-4"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+              />
+              Ativo (global)
+            </label>
             <label className="flex items-center gap-2 text-sm font-bold text-txt-main">
               <input
                 type="checkbox"
@@ -189,10 +229,12 @@ export function PaymentMethodsModal({
               />
               Gera Conta a Receber?
             </label>
-            <span className="text-xs text-txt-muted">
-              Dinheiro/Pix sempre recebem a vista.
-            </span>
           </div>
+          <span className="text-xs text-txt-muted">
+            {isImmediateType
+              ? 'Recebimento imediato usa prazo 0 e nao gera contas.'
+              : 'Para pagamento a prazo, configure o prazo por deposito.'}
+          </span>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -207,10 +249,8 @@ export function PaymentMethodsModal({
                   deposit_id: deposit.id,
                   is_active: true,
                   due_days: 0,
-                  max_installments: 1,
                 };
-                const disableDueDays = isImmediateType || !generatesReceivable || !config.is_active;
-                const disableInstallments = isImmediateType || !config.is_active;
+                const disableDueDays = isImmediateType || !config.is_active;
 
                 return (
                   <div key={deposit.id} className="border border-bdr rounded-xl p-3 bg-app/40 space-y-2">
@@ -226,30 +266,23 @@ export function PaymentMethodsModal({
                         Ativo
                       </label>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {receiptType === 'DEFERRED' ? (
                       <div>
                         <label className="text-[10px] font-black uppercase tracking-widest text-txt-muted">Prazo (dias)</label>
                         <input
                           type="number"
-                          min={0}
+                          min={1}
                           className="w-full bg-app border border-bdr rounded-lg px-3 py-2 text-sm font-bold text-txt-main focus:ring-2 focus:ring-emerald-500 outline-none"
                           value={config.due_days}
                           onChange={(e) => updateDepositConfig(deposit.id, { due_days: Number(e.target.value) || 0 })}
                           disabled={disableDueDays}
                         />
                       </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase tracking-widest text-txt-muted">Max. parcelas</label>
-                        <input
-                          type="number"
-                          min={1}
-                          className="w-full bg-app border border-bdr rounded-lg px-3 py-2 text-sm font-bold text-txt-main focus:ring-2 focus:ring-emerald-500 outline-none"
-                          value={config.max_installments}
-                          onChange={(e) => updateDepositConfig(deposit.id, { max_installments: Number(e.target.value) || 1 })}
-                          disabled={disableInstallments}
-                        />
+                    ) : (
+                      <div className="text-[10px] font-black uppercase tracking-widest text-txt-muted">
+                        Prazo: 0 dias (imediato)
                       </div>
-                    </div>
+                    )}
                   </div>
                 );
               })}

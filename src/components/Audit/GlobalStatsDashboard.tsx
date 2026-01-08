@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Bike, Zap, Store, Monitor, Crown, Heart, Package } from 'lucide-react';
-import { supabase } from '@/utils/supabaseClient';
-import { useLiveQuery, db } from '@/utils/legacyHelpers';
+import { depositService, financialService } from '@/services';
+import { toast } from 'sonner';
 import type { AuditDashboardStats } from '../../types/audit';
 
 const formatCurrency = (value: number) =>
@@ -79,47 +79,45 @@ export const GlobalStatsDashboard: React.FC = () => {
   const [stats, setStats] = useState<AuditDashboardStats>(emptyStats);
   const [loading, setLoading] = useState(true);
   const [selectedDepositId, setSelectedDepositId] = useState<string | null>(null);
-  const deposits = useLiveQuery(() => db.deposits.toArray(), []);
-  const depositOptions = useMemo(() => {
-    const items = (deposits || []).filter((d) => d.ativo !== false);
-    return items.sort((a, b) => String(a.nome ?? '').localeCompare(String(b.nome ?? '')));
-  }, [deposits]);
+  const [depositOptions, setDepositOptions] = useState<any[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const deps = await depositService.getAll();
+        if (!mounted) return;
+        const items = (deps || []).filter((d) => d.active !== false).map((d: any) => ({ ...d, nome: d.name }));
+        items.sort((a: any, b: any) => String(a.nome ?? '').localeCompare(String(b.nome ?? '')));
+        setDepositOptions(items);
+      } catch (err) {
+        console.error('Erro ao carregar depósitos:', err);
+        toast.error('Erro ao carregar depósitos');
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
     const loadStats = async () => {
       setLoading(true);
       try {
-        const { data, error: rpcError } = await supabase.rpc('get_audit_dashboard_stats', {
-          target_deposit_id: selectedDepositId,
-        });
-        if (rpcError) {
-          if (import.meta.env.DEV) {
-            // eslint-disable-next-line no-console
-            console.log('AUDIT_DASHBOARD_RPC_ERROR', rpcError);
-          }
-          if (!alive) return;
+        const raw = await financialService.getAuditDashboardStats(selectedDepositId ?? undefined);
+        if (!alive) return;
+        if (!raw) {
           setStats(emptyStats);
           return;
         }
-        const raw = Array.isArray(data) ? data[0] : data;
-        let parsed: any = raw;
-        if (typeof raw === 'string') {
-          try {
-            parsed = JSON.parse(raw);
-          } catch {
-            parsed = {};
-          }
-        }
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         const normalized = normalizeStats(parsed || {});
         if (!alive) return;
         setStats(normalized);
       } catch (err: any) {
         if (!alive) return;
-        if (import.meta.env.DEV) {
-          // eslint-disable-next-line no-console
-          console.log('AUDIT_DASHBOARD_LOAD_FAIL', err);
-        }
+        console.error('AUDIT_DASHBOARD_LOAD_FAIL', err);
         setStats(emptyStats);
       } finally {
         if (alive) setLoading(false);
