@@ -11,6 +11,7 @@ import {
   useLiveQuery, db,
 } from '@/utils/legacyHelpers';
 import { employeeService, productService, type ProductPricing as ProductPricingRow } from '@/services';
+import { resolveProductPrice } from '@/utils/pricing';
 import { toast } from 'sonner';
 import { SYSTEM_USER_ID } from '@/constants/system';
 
@@ -221,6 +222,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   
   const serviceOrders = useLiveQuery(() => db.service_orders.toArray()) ?? [];
   const stockBalance = useLiveQuery(() => db.stock_balance.toArray(), [refreshKey]) ?? [];
+  const productPricings = useLiveQuery(() => db.product_pricing?.toArray() ?? []) ?? [];
 
   // -------------------------------------------------------------------------
   // COMPUTED
@@ -270,6 +272,15 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     });
     return map;
   }, [stockBalance]);
+
+  const activePricingDepositId = useMemo(() => {
+    if (countForm.depositId) return countForm.depositId;
+    return activeDeposits[0]?.id ?? null;
+  }, [countForm.depositId, activeDeposits]);
+
+  const getDisplayPrice = useCallback((productId: string) => {
+    return resolveProductPrice(productId, activePricingDepositId, productPricings);
+  }, [activePricingDepositId, productPricings]);
 
   // -------------------------------------------------------------------------
   // HELPERS - PRECIFICAÇÃO POR DEPÓSITO
@@ -730,53 +741,42 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     }
   };
 
-  const handleSaveProduct = async (...args) => {
-    setSavingProduct(true);
-    try {
-      // ...existing code...
-      await loadProducts();
-      setProductForm(EMPTY_PRODUCT_FORM);
-      setIsEditingProduct(false);
-      setPricingByDeposit({});
-      setExistingPricingDeposits(new Set());
-      toast.success('Produto salvo com sucesso!');
-    } catch (error) {
-      // ...existing code...
-    } finally {
-      setSavingProduct(false);
-    }
-  };
-      .count?.();
-    if (movementsCount && movementsCount > 0) {
-      alert('Este produto não pode ser excluído: existem movimentações de estoque vinculadas.');
-      setDeleteProductModal(null);
-      return;
-    }
+  async function handleDeleteProductConfirm() {
+    const productId = deleteProductModal?.id;
+    if (!productId) return;
 
     setSavingProduct(true);
     try {
-      await db.products.delete(deleteProductModal.id);
-      // Limpar dados relacionados
-      const stockToDelete = await db.stock_balance?.filter(sb => sb.product_id === deleteProductModal.id).toArray() ?? [];
+      const { count, error } = await supabase
+        .from('stock_movements')
+        .select('id', { count: 'exact', head: true })
+        .eq('product_id', productId);
+      if (error) throw error;
+      if ((count ?? 0) > 0) {
+        alert('Este produto nÆo pode ser exclu¡do: existem movimenta‡äes de estoque vinculadas.');
+        setDeleteProductModal(null);
+        return;
+      }
+
+      await db.products.delete(productId);
+      const stockToDelete = await db.stock_balance?.filter(sb => sb.product_id === productId).toArray() ?? [];
       for (const sb of stockToDelete) {
         await db.stock_balance?.delete(sb.id);
       }
-      const pricingToDelete = await db.product_pricing?.filter(pp => pp.productId === deleteProductModal.id).toArray() ?? [];
+      const pricingToDelete = await db.product_pricing?.filter(pp => pp.productId === productId).toArray() ?? [];
       for (const pp of pricingToDelete) {
         await db.product_pricing?.delete(pp.id);
       }
-      
+
       setDeleteProductModal(null);
-      alert('Produto excluído com sucesso!');
+      alert('Produto exclu¡do com sucesso!');
     } catch (error) {
       console.error('Erro ao excluir produto:', error);
-      alert('Erro ao excluir produto.');
+      toast.error('Erro ao excluir produto. Tente novamente.');
     } finally {
       setSavingProduct(false);
     }
-  };
-
-  // -------------------------------------------------------------------------
+  }
   // HANDLERS - TRANSFERÊNCIA
   // -------------------------------------------------------------------------
   const handleTransfer = async () => {
@@ -1541,71 +1541,71 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                       <p className="text-sm">Nenhum produto encontrado</p>
                     </div>
                   ) : (
-                    filteredProducts.map(product => (
-                      <div
-                        key={product.id}
-                        className={`p-4 border-b border-bdr hover:bg-app/50 cursor-pointer transition-colors ${
-                          productForm.id === product.id ? 'bg-purple-500/10 border-l-4 border-l-purple-500' : ''
-                        } ${!product.ativo ? 'opacity-50' : ''}`}
-                        onClick={() => handleEditProduct(product)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="text-xl">
-                              {PRODUCT_TYPES.find(t => t.value === product.tipo)?.icon || '📋'}
-                            </span>
-                            <div>
-                              <div className="font-bold text-txt-main flex items-center gap-2">
-                                {product.nome}
-                                {!product.ativo && (
-                                  <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-bold">
-                                    INATIVO
+                    filteredProducts.map(product => {
+                      const displayPrice = getDisplayPrice(product.id);
+                      return (
+                        <div
+                          key={product.id}
+                          className={`p-4 border-b border-bdr hover:bg-app/50 cursor-pointer transition-colors ${
+                            productForm.id === product.id ? 'bg-purple-500/10 border-l-4 border-l-purple-500' : ''
+                          } ${!product.ativo ? 'opacity-50' : ''}`}
+                          onClick={() => handleEditProduct(product)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">
+                                {PRODUCT_TYPES.find(t => t.value === product.tipo)?.icon || '??'}
+                              </span>
+                              <div>
+                                <div className="font-bold text-txt-main flex items-center gap-2">
+                                  {product.nome}
+                                  {!product.ativo && (
+                                    <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-bold">
+                                      INATIVO
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-txt-muted flex items-center gap-2 mt-0.5">
+                                  <span>{product.codigo || 'Sem c¢digo'}</span>
+                                  <span></span>
+                                  <span className="flex items-center gap-1">
+                                    {MOVEMENT_TYPES.find(m => m.value === product.movement_type)?.label || 'Simples'}
                                   </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-txt-muted flex items-center gap-2 mt-0.5">
-                                <span>{product.codigo || 'Sem código'}</span>
-                                <span>•</span>
-                                <span className="flex items-center gap-1">
-                                  {MOVEMENT_TYPES.find(m => m.value === product.movement_type)?.label || 'Simples'}
-                                </span>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                          <div className="text-right">
-                            {product.movement_type === 'EXCHANGE' ? (
-                              // Produto com 2 modalidades de venda (Troca/Completa)
-                              <div className="space-y-0.5">
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className="text-[10px] text-yellow-400 font-bold bg-yellow-500/10 px-1.5 py-0.5 rounded">TROCA</span>
-                                  <span className="font-bold text-green-500">
-                                    R$ {(product.preco_troca ?? product.preco_venda ?? 0).toFixed(2)}
-                                  </span>
+                            <div className="text-right">
+                              {product.movement_type === 'EXCHANGE' ? (
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span className="text-[10px] text-yellow-400 font-bold bg-yellow-500/10 px-1.5 py-0.5 rounded">TROCA</span>
+                                    <span className="font-bold text-green-500">
+                                      R$ {displayPrice.toFixed(2)}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span className="text-[10px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded">COMPLETA</span>
+                                    <span className="font-bold text-blue-400">
+                                      R$ {displayPrice.toFixed(2)}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className="text-[10px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded">COMPLETA</span>
-                                  <span className="font-bold text-blue-400">
-                                    R$ {(product.preco_completa ?? product.preco_venda ?? 0).toFixed(2)}
-                                  </span>
+                              ) : (
+                                <div className="font-bold text-green-500">
+                                  R$ {displayPrice.toFixed(2)}
                                 </div>
-                              </div>
-                            ) : (
-                              // Produto simples (preço único)
-                              <div className="font-bold text-green-500">
-                                R$ {(product.preco_venda || 0).toFixed(2)}
-                              </div>
-                            )}
-                            {product.track_stock && (
-                              <div className="text-[10px] text-txt-muted">Controla estoque</div>
-                            )}
+                              )}
+                              {product.track_stock && (
+                                <div className="text-[10px] text-txt-muted">Controla estoque</div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
-
               {/* Formulário de Produto */}
               <div className="bg-surface rounded-2xl border border-bdr overflow-hidden">
                 {!isEditingProduct ? (
@@ -2661,7 +2661,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                   Cancelar
                 </button>
                 <button
-                  onClick={handleDeleteProduct}
+                  onClick={handleDeleteProductConfirm}
                   disabled={savingProduct}
                   className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg flex items-center gap-2 transition-colors"
                 >

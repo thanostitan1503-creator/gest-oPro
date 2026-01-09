@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Trash2, HelpCircle, Package, RefreshCw, ShoppingBag, Info, X } from 'lucide-react';
 import { useLiveQuery, db } from '@/utils/legacyHelpers';
-import { productService } from '@/services';
+import { resolveProductPrice, type PricingRow } from '@/utils/pricing';
 import { toast } from 'sonner';
 
 export interface OrderItem {
@@ -99,6 +99,26 @@ export function ServiceOrderItems({
   const [showSaleModeModal, setShowSaleModeModal] = useState(false);
   const [pendingProduct, setPendingProduct] = useState<any>(null);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [pricingRows, setPricingRows] = useState<PricingRow[]>([]);
+  const activeDepositId = selectedDepositId ?? null;
+
+  const loadPricing = async () => {
+    try {
+      const rows = await db.product_pricing?.toArray?.();
+      setPricingRows(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      console.error('Erro ao carregar precos por deposito', error);
+      setPricingRows([]);
+    }
+  };
+
+  useEffect(() => {
+    void loadPricing();
+  }, []);
+
+  useEffect(() => {
+    void loadPricing();
+  }, [activeDepositId]);
   
   const includeIdsKey = (includeProductIds || []).join('|');
   const isDeliveryFeeProduct = (p: any) => {
@@ -161,18 +181,8 @@ export function ServiceOrderItems({
     return raw === 'EXCHANGE';
   };
 
-  const resolveFallbackPrice = (product: any, saleMode: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null) => {
-    const sale = Number(product.sale_price ?? product.preco_venda ?? product.preco_padrao ?? product.preco ?? product.price ?? 0) || 0;
-    const exchange = Number(product.exchange_price ?? product.preco_troca ?? sale) || sale;
-    const full = Number(product.full_price ?? product.preco_completa ?? sale) || sale;
-    switch (saleMode) {
-      case 'EXCHANGE':
-        return exchange;
-      case 'FULL':
-        return full;
-      default:
-        return sale;
-    }
+  const resolveFallbackPrice = (product: any, _saleMode: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null) => {
+    return resolveProductPrice(product.id, activeDepositId, pricingRows);
   };
 
   const handleAddItem = async () => {
@@ -193,23 +203,22 @@ export function ServiceOrderItems({
   /** Adiciona item ao carrinho com a modalidade especificada */
   const addItemWithMode = async (product: any, saleMode: 'SIMPLE' | 'EXCHANGE' | 'FULL') => {
     const qty = Math.max(1, Number(quantity) || 1);
-    const fallbackPrice = resolveFallbackPrice(product, saleMode);
     const name = product.nome ?? product.name ?? '';
     const type = isServiceProduct(product) ? 'SERVICO' : product.tipo ?? product.type ?? '';
 
-    let unitPrice = fallbackPrice;
-    try {
-      unitPrice = await productService.getFinalPrice(product.id, selectedDepositId!, saleMode);
-    } catch (error) {
-      console.error('Erro ao obter preço do produto', error);
-      toast.error('Não foi possível obter o preço deste produto. Usando valor padrão.');
-    }
+    const unitPrice = resolveProductPrice(product.id, activeDepositId, pricingRows);
+    const total = unitPrice * qty;
 
     const existing = items.find((i) => i.produtoId === product.id && i.sale_movement_type === saleMode);
     if (existing) {
+      const resolved = resolveProductPrice(product.id, activeDepositId, pricingRows);
+      const displayUnit =
+        (existing.precoUnitario ?? 0) === 0 && resolved > 0
+          ? resolved
+          : (existing.precoUnitario ?? resolved);
       const next = items.map((i) =>
         i.id === existing.id
-          ? { ...i, quantidade: i.quantidade + qty }
+          ? { ...i, precoUnitario: displayUnit, quantidade: i.quantidade + qty }
           : i
       );
       setItems(next);
@@ -234,6 +243,24 @@ export function ServiceOrderItems({
     setShowSaleModeModal(false);
     setPendingProduct(null);
   };
+
+  useEffect(() => {
+    if (items.length === 0 || pricingRows.length === 0) return;
+    let changed = false;
+    const nextItems = items.map((item) => {
+      const resolved = resolveProductPrice(item.produtoId, activeDepositId, pricingRows);
+      const displayUnit =
+        (item.precoUnitario ?? 0) === 0 && resolved > 0
+          ? resolved
+          : (item.precoUnitario ?? resolved);
+      if (displayUnit !== item.precoUnitario) {
+        changed = true;
+        return { ...item, precoUnitario: displayUnit };
+      }
+      return item;
+    });
+    if (changed) setItems(nextItems);
+  }, [activeDepositId, items, pricingRows, setItems]);
 
   /** Handler do modal - confirma escolha de modalidade */
   const handleSaleModeConfirm = async (mode: 'EXCHANGE' | 'FULL') => {
@@ -357,6 +384,11 @@ export function ServiceOrderItems({
                 const isLocked = lockedProductIds?.includes(item.produtoId);
                 const modeKey = (item.sale_movement_type || 'SIMPLE') as keyof typeof SALE_MODE_INFO;
                 const modeInfo = SALE_MODE_INFO[modeKey] || SALE_MODE_INFO.SIMPLE;
+                const resolved = resolveProductPrice(item.produtoId, activeDepositId, pricingRows);
+                const displayUnit =
+                  (item.precoUnitario ?? 0) === 0 && resolved > 0
+                    ? resolved
+                    : (item.precoUnitario ?? resolved);
                 
                 return (
                   <tr key={item.id} className="border-t border-gray-200">
@@ -374,7 +406,7 @@ export function ServiceOrderItems({
                         {modeInfo.emoji} {modeInfo.label}
                       </span>
                     </td>
-                    <td className="px-2 py-2 font-medium">R$ {item.precoUnitario.toFixed(2)}</td>
+                    <td className="px-2 py-2 font-medium">R$ {displayUnit.toFixed(2)}</td>
                     <td className="px-2 py-2">
                       <input
                         type="number"
@@ -386,7 +418,7 @@ export function ServiceOrderItems({
                       />
                     </td>
                     <td className="px-2 py-2 font-bold text-green-700">
-                      R$ {(item.precoUnitario * item.quantidade).toFixed(2)}
+                      R$ {(displayUnit * item.quantidade).toFixed(2)}
                     </td>
                     <td className="px-2 py-2">
                       <button
@@ -637,6 +669,3 @@ export function ServiceOrderItems({
     </div>
   );
 }
-
-
-

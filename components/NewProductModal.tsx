@@ -178,7 +178,7 @@ const NewProductModal: FC<Props> = ({ isOpen, onClose, deposits, products, defau
           type?: string | null;
           min_stock?: number | null;
         } = {
-          ...initial,
+          ...JSON.parse(JSON.stringify(initial)),
           nome: isDeliveryFee ? DELIVERY_FEE_NAME : nome.trim(),
           tipo: isService ? 'OUTROS' : tipo,
           preco_custo: isService ? 0 : parseNum(preco_custo),
@@ -210,7 +210,7 @@ const NewProductModal: FC<Props> = ({ isOpen, onClose, deposits, products, defau
         type?: string | null;
         min_stock?: number | null;
       } = {
-        ...initial,
+        ...JSON.parse(JSON.stringify(initial)),
         nome: isDeliveryFee ? DELIVERY_FEE_NAME : nome.trim(),
         tipo: isService ? 'OUTROS' : tipo,
         preco_custo: isService ? 0 : parseNum(preco_custo),

@@ -464,7 +464,10 @@ export const db: any = {
   product_pricing: {
     toArray: async () => {
       const { data } = await supabase.from('product_pricing').select('*');
-      return data || [];
+      return (data || []).map((row: any) => ({
+        ...row,
+        mode: row.mode ?? 'SIMPLES',
+      }));
     },
     filter: () => ({ toArray: async () => [] }),
     delete: async (id: string) => {

@@ -31,6 +31,7 @@ export type DriverStatus = 'OFFLINE' | 'DISPONIVEL' | 'PAUSADO' | 'OCUPADO';
 
 export type ModalidadeItem = string; 
 export type TipoProduto = 'GAS_CHEIO' | 'VASILHAME_VAZIO' | 'AGUA' | 'OUTROS';
+export type PricingMode = 'SIMPLES' | 'TROCA' | 'COMPLETA';
 export type StockMovementRule = 'SIMPLE' | 'EXCHANGE' | 'FULL';
 export type UserRole = 'ADMIN' | 'COLABORADOR' | 'ENTREGADOR';
 
@@ -186,6 +187,7 @@ export interface ProductPricing {
   id: string;
   productId: string;         // ✅ FK para products.id
   depositoId: string;        // ✅ FK para deposits.id
+  mode?: PricingMode;         // ✅ Modalidade do preco
   price: number;             // ✅ Preço de venda específico deste depósito
   created_at?: string | null;
   updated_at?: string | null;

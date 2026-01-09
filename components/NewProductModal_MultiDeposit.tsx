@@ -275,7 +275,7 @@ const NewProductModal: FC<Props> = ({ isOpen, onClose, deposits, products, initi
     if (isService) {
         // Serviços: fluxo antigo (simples)
         const servicePayload = {
-          ...initial,
+          ...JSON.parse(JSON.stringify(initial)),
           id: productId,
           nome: nome.trim(),
           tipo: 'OUTROS',
@@ -301,7 +301,7 @@ const NewProductModal: FC<Props> = ({ isOpen, onClose, deposits, products, initi
       } else {
         // Produtos: fluxo multi-depósito
         const productPayload = {
-          ...initial,
+          ...JSON.parse(JSON.stringify(initial)),
           id: productId,
           nome: nome.trim(),
           tipo: tipo,

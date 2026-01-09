@@ -1152,6 +1152,7 @@ export type Database = {
           exchange_price: number | null
           full_price: number | null
           id: string
+          mode: string | null
           price: number
           product_id: string
           updated_at: string | null
@@ -1162,6 +1163,7 @@ export type Database = {
           exchange_price?: number | null
           full_price?: number | null
           id?: string
+          mode?: string | null
           price: number
           product_id: string
           updated_at?: string | null
@@ -1172,6 +1174,7 @@ export type Database = {
           exchange_price?: number | null
           full_price?: number | null
           id?: string
+          mode?: string | null
           price?: number
           product_id?: string
           updated_at?: string | null
