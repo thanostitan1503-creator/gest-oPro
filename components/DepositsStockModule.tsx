@@ -762,6 +762,9 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       delete payload.preco_venda;
       delete payload.preco_troca;
       delete payload.preco_completa;
+      delete payload.preco_padrao;
+      delete payload.default_price;
+      delete payload.base_price;
       delete payload.sale_price;
       delete payload.exchange_price;
       delete payload.full_price;
