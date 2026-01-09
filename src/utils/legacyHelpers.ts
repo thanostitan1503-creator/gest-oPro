@@ -12,8 +12,10 @@ import { supabase } from './supabaseClient';
 import type { Database } from '@/types/supabase';
 import type { PaymentMethod, PaymentMethodDepositConfig } from '@/types';
 import type { Maquininha } from '@/domain/types';
+import { fromDbProductType, toDbProductType } from '@/utils/productType';
 import { useState, useEffect } from 'react';
 import { SYSTEM_USER_ID } from '@/constants/system';
+import { ensurePricingModeMigration, updatePricingModeSupportFromRows } from '@/utils/pricingMigration';
 
 // ==================== STUBS UNIVERSAIS ====================
 
@@ -112,11 +114,7 @@ export const db: any = {
     toArray: async () => {
       const { data } = await supabase.from('products').select('*');
       const mapped = (data || []).map((p: any) => {
-        // Normalizar tipo: EMPTY_CONTAINER → VASILHAME_VAZIO, etc.
-        let tipo = p.type;
-        if (tipo === 'EMPTY_CONTAINER') tipo = 'VASILHAME_VAZIO';
-        else if (tipo === 'FILLED_GAS') tipo = 'GAS_CHEIO';
-        else if (tipo === 'OTHER' || tipo === 'OTHERS') tipo = 'OUTROS';
+        const tipo = fromDbProductType(p.type ?? p.tipo ?? null);
         
         return {
           id: p.id,
@@ -124,6 +122,7 @@ export const db: any = {
           nome: p.name || p.nome || '',
           descricao: p.description,
           tipo,
+          type: tipo,
           unidade: p.unit,
           preco_venda: p.sale_price,
           preco_custo: p.cost_price,
@@ -150,12 +149,8 @@ export const db: any = {
     get: async (id: string) => {
       const { data } = await supabase.from('products').select('*').eq('id', id).single();
       if (!data) return null;
-      
-      // Normalizar tipo: EMPTY_CONTAINER → VASILHAME_VAZIO, etc.
-      let tipo = data.type;
-      if (tipo === 'EMPTY_CONTAINER') tipo = 'VASILHAME_VAZIO';
-      else if (tipo === 'FILLED_GAS') tipo = 'GAS_CHEIO';
-      else if (tipo === 'OTHER' || tipo === 'OTHERS') tipo = 'OUTROS';
+
+      const tipo = fromDbProductType(data.type ?? data.tipo ?? null);
       
       return {
         id: data.id,
@@ -163,6 +158,7 @@ export const db: any = {
         nome: data.name || data.nome || '',
         descricao: data.description,
         tipo,
+        type: tipo,
         unidade: data.unit,
         preco_venda: data.sale_price,
         preco_custo: data.cost_price,
@@ -179,12 +175,7 @@ export const db: any = {
       };
     },
     put: async (product: any) => {
-      // Convert PT→EN antes de salvar
-      // Normalizar tipo: VASILHAME_VAZIO → EMPTY_CONTAINER, etc.
-      let type = product.tipo || product.type;
-      if (type === 'VASILHAME_VAZIO') type = 'EMPTY_CONTAINER';
-      else if (type === 'GAS_CHEIO') type = 'FILLED_GAS';
-      else if (type === 'OUTROS') type = 'OTHER';
+      const type = toDbProductType(product.tipo ?? product.type ?? null);
       
       const dbProduct = {
         id: product.id,
@@ -216,15 +207,10 @@ export const db: any = {
       if ('nome' in updates) dbUpdates.name = updates.nome;
       if ('name' in updates) dbUpdates.name = updates.name;
       
-      // Normalizar tipo PT→EN
       if ('tipo' in updates) {
-        let type = updates.tipo;
-        if (type === 'VASILHAME_VAZIO') type = 'EMPTY_CONTAINER';
-        else if (type === 'GAS_CHEIO') type = 'FILLED_GAS';
-        else if (type === 'OUTROS') type = 'OTHER';
-        dbUpdates.type = type;
+        dbUpdates.type = toDbProductType(updates.tipo);
       }
-      if ('type' in updates) dbUpdates.type = updates.type;
+      if ('type' in updates) dbUpdates.type = toDbProductType(updates.type);
       
       if ('unidade' in updates) dbUpdates.unit = updates.unidade;
       if ('unit' in updates) dbUpdates.unit = updates.unit;
@@ -463,7 +449,10 @@ export const db: any = {
   },
   product_pricing: {
     toArray: async () => {
-      const { data } = await supabase.from('product_pricing').select('*');
+      await ensurePricingModeMigration();
+      const { data, error } = await supabase.from('product_pricing').select('*');
+      if (error) throw error;
+      updatePricingModeSupportFromRows(data);
       return (data || []).map((row: any) => ({
         ...row,
         mode: row.mode ?? 'SIMPLES',
@@ -559,25 +548,29 @@ export const deleteDeposit = async (id: string) => {
 export const listProducts = async () => {
   const { data, error } = await supabase.from('products').select('*').eq('is_active', true);
   if (error) throw error;
-  return (data || []).map((p: any) => ({
-    id: p.id,
-    codigo: p.code || p.codigo || 'Sem código',
-    nome: p.name || p.nome || 'Sem nome',
-    descricao: p.description,
-    tipo: p.type,
-    unidade: p.unit,
-    preco_venda: p.sale_price,
-    preco_custo: p.cost_price,
-    preco_troca: p.exchange_price,
-    preco_completa: p.full_price,
-    movement_type: p.movement_type,
-    return_product_id: p.return_product_id,
-    track_stock: p.track_stock,
-    ativo: p.is_active,
-    depositoId: p.deposit_id,
-    product_group: p.product_group,
-    image_url: p.image_url,
-  }));
+  return (data || []).map((p: any) => {
+    const tipo = fromDbProductType(p.type ?? p.tipo ?? null);
+    return ({
+      id: p.id,
+      codigo: p.code || p.codigo || 'Sem código',
+      nome: p.name || p.nome || 'Sem nome',
+      descricao: p.description,
+      tipo,
+      type: tipo,
+      unidade: p.unit,
+      preco_venda: p.sale_price,
+      preco_custo: p.cost_price,
+      preco_troca: p.exchange_price,
+      preco_completa: p.full_price,
+      movement_type: p.movement_type,
+      return_product_id: p.return_product_id,
+      track_stock: p.track_stock,
+      ativo: p.is_active,
+      depositoId: p.deposit_id,
+      product_group: p.product_group,
+      image_url: p.image_url,
+    });
+  });
 };
 
 export const getProducts = listProducts;

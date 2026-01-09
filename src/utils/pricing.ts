@@ -3,18 +3,13 @@ export type { PricingMode } from '@/domain/types';
 
 export type PricingRow = {
   id?: string;
-  product_id?: string | null;
-  productId?: string | null;
+  product_id: string;
   deposit_id?: string | null;
-  depositId?: string | null;
-  depositoId?: string | null;
-  mode?: PricingMode | string | null;
-  price?: number | null;
-  value?: number | null;
+  mode?: PricingMode | null;
+  price: number;
   exchange_price?: number | null;
   full_price?: number | null;
-  exchangePrice?: number | null;
-  fullPrice?: number | null;
+  sale_price?: number | null;
 };
 
 const normalizeMode = (value: unknown): PricingMode => {
@@ -31,47 +26,46 @@ const coerceNumber = (value: unknown): number | null => {
   return Number.isFinite(num) ? num : null;
 };
 
-const getProductId = (row: PricingRow): string | null =>
-  row.product_id ?? row.productId ?? null;
+const getLegacyPriceForMode = (row: PricingRow, mode: PricingMode): number | null => {
+  const target = normalizeMode(mode);
+  if (target === 'TROCA') return coerceNumber(row.exchange_price);
+  if (target === 'COMPLETA') return coerceNumber(row.full_price);
+  return coerceNumber(row.price ?? row.sale_price);
+};
 
-const getDepositId = (row: PricingRow): string | null =>
-  row.deposit_id ?? row.depositoId ?? row.depositId ?? null;
-
-const getPriceForMode = (row: PricingRow, mode: PricingMode): number | null => {
-  const normalizedMode = normalizeMode(mode);
-  const rowMode = normalizeMode(row.mode);
-  const basePrice = coerceNumber(row.price ?? row.value);
-  const exchangePrice = coerceNumber(row.exchange_price ?? row.exchangePrice);
-  const fullPrice = coerceNumber(row.full_price ?? row.fullPrice);
-
-  if (normalizedMode === 'SIMPLES') return basePrice;
-  if (normalizedMode === 'TROCA') {
-    if (exchangePrice !== null) return exchangePrice;
-    return rowMode === 'TROCA' ? basePrice : null;
+const getRowPriceForMode = (row: PricingRow, mode: PricingMode): number | null => {
+  const modeValue = row.mode ?? null;
+  const hasLegacyPrices = row.exchange_price !== null && row.exchange_price !== undefined
+    || row.full_price !== null && row.full_price !== undefined;
+  if (
+    hasLegacyPrices &&
+    (modeValue === null || modeValue === undefined || String(modeValue).trim() === '' || normalizeMode(modeValue) === 'SIMPLES')
+  ) {
+    return getLegacyPriceForMode(row, mode);
   }
-  if (normalizedMode === 'COMPLETA') {
-    if (fullPrice !== null) return fullPrice;
-    return rowMode === 'COMPLETA' ? basePrice : null;
+  if (modeValue !== null && modeValue !== undefined && String(modeValue).trim() !== '') {
+    if (normalizeMode(modeValue) !== normalizeMode(mode)) return null;
+    return coerceNumber(row.price);
   }
-  return basePrice;
+  return getLegacyPriceForMode(row, mode);
+};
+
+const findFirstPrice = (rows: PricingRow[], mode: PricingMode): number | null => {
+  for (const row of rows) {
+    const candidate = getRowPriceForMode(row, mode);
+    if (candidate !== null) return candidate;
+  }
+  return null;
 };
 
 const findMinPrice = (rows: PricingRow[], mode: PricingMode): number | null => {
   let min: number | null = null;
   for (const row of rows) {
-    const candidate = getPriceForMode(row, mode);
+    const candidate = getRowPriceForMode(row, mode);
     if (candidate === null) continue;
     if (min === null || candidate < min) min = candidate;
   }
   return min;
-};
-
-const findFirstPrice = (rows: PricingRow[], mode: PricingMode): number | null => {
-  for (const row of rows) {
-    const candidate = getPriceForMode(row, mode);
-    if (candidate !== null) return candidate;
-  }
-  return null;
 };
 
 export function resolvePrice(args: {
@@ -89,7 +83,7 @@ export function resolvePrice(args: {
   if (normalizedDepositId) {
     const depositRows = rows.filter(
       (row) =>
-        getProductId(row) === productId && getDepositId(row) === normalizedDepositId
+        row.product_id === productId && (row.deposit_id ?? null) === normalizedDepositId
     );
     const exactPrice = findFirstPrice(depositRows, targetMode);
     if (exactPrice !== null) return exactPrice;
@@ -99,7 +93,7 @@ export function resolvePrice(args: {
     }
   }
 
-  const productRows = rows.filter((row) => getProductId(row) === productId);
+  const productRows = rows.filter((row) => row.product_id === productId);
   let minPrice = findMinPrice(productRows, targetMode);
 
   if (minPrice === null && targetMode !== 'SIMPLES') {

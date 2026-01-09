@@ -115,6 +115,7 @@ class Database {
   outbox_events = new Table<any>();
   deposits = new Table<any>();
   products = new Table<any>();
+  product_pricing = new Table<any>();
   service_orders = new Table<any>();
   service_order_items = new Table<any>();
   stock_movements = new Table<any>();

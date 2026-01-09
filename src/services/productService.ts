@@ -9,6 +9,7 @@ import { supabase } from '@/utils/supabaseClient';
 import type { Database } from '@/types/supabase';
 import { fromDbProductType, toDbProductType } from '@/utils/productType';
 import { resolvePrice, type PricingMode } from '@/utils/pricing';
+import { ensurePricingModeMigration, updatePricingModeSupportFromRows } from '@/utils/pricingMigration';
 
 // Atalhos de tipos (schema real)
 export type Product = Database['public']['Tables']['products']['Row'];
@@ -22,8 +23,8 @@ type ProductUpdate = Database['public']['Tables']['products']['Update'];
 export type ProductPricing = {
   product_id: string;
   deposit_id: string | null;
-  mode: PricingMode;
-  price: number; // mapeia para sale_price
+  mode?: PricingMode | null;
+  price: number;
   sale_price?: number | null;
   exchange_price?: number | null;
   full_price?: number | null;
@@ -56,26 +57,14 @@ const normalizePricingMode = (value: unknown): PricingMode => {
   return 'SIMPLES';
 };
 
+const hasModeColumn = (row: any): boolean =>
+  !!row && Object.prototype.hasOwnProperty.call(row, 'mode');
+
 const mapProductRow = (row: Product): Product => ({
   ...row,
+  tipo: fromDbProductType((row as any).type ?? (row as any).tipo ?? null) as any,
   type: fromDbProductType((row as any).type ?? (row as any).tipo ?? null) as any,
 });
-
-let pricingModeMigrated = false;
-const ensurePricingModeMigration = async () => {
-  if (pricingModeMigrated) return;
-  try {
-    const { error } = await supabase
-      .from('product_pricing')
-      .update({ mode: 'SIMPLES' })
-      .is('mode', null);
-    if (error) throw error;
-  } catch (err) {
-    console.warn('Nao foi possivel migrar mode em product_pricing:', err);
-  } finally {
-    pricingModeMigrated = true;
-  }
-};
 
 // Normaliza payload vindo do front (camelCase/PT) para colunas do Supabase (snake_case)
 const normalizeProductPayload = (input: any): ProductInsert => {
@@ -285,21 +274,8 @@ export const productService = {
    */
   async getPricing(productId: string, depositId: string, mode: PricingMode = 'SIMPLES'): Promise<ProductPricing | null> {
     const normalizedMode = normalizePricingMode(mode);
-    const { data, error } = await supabase
-      .from('product_pricing')
-      .select('product_id, deposit_id, price, exchange_price, full_price')
-      .eq('product_id', productId)
-      .eq('deposit_id', depositId)
-      .maybeSingle();
-
-    if (error) {
-      if (error.code === 'PGRST116') return null;
-      throw new Error(`Erro ao buscar preco: ${error.message}`);
-    }
-
-    if (!data) return null;
-
-    const rows = [{ ...data, mode: (data as any).mode ?? 'SIMPLES' }];
+    const rows = await this.listPricingByProduct(productId);
+    if (!rows || rows.length === 0) return null;
 
     const sale = resolvePrice({ productId, depositId, mode: 'SIMPLES', rows });
     const exchange = resolvePrice({ productId, depositId, mode: 'TROCA', rows });
@@ -317,20 +293,27 @@ export const productService = {
     };
   },
 
+
   /**
-   * 10. Definir preço do produto em um depósito
-   */
-  async setPricing(productId: string, depositId: string, pricing: PricingPayload): Promise<ProductPricing>;
-  async setPricing(productId: string, depositId: string, mode: PricingMode, pricing: PricingPayload): Promise<ProductPricing>;
+    * 10. Definir preço do produto em um depósito
+    *
+    * Aceita sobrecarga via parâmetros:
+    * - `setPricing(productId, depositId, pricing)` para definir preço simples (SIMPLES).
+    * - `setPricing(productId, depositId, mode, pricing)` para definir preço específico da modalidade.
+    *
+    * O primeiro parâmetro de modo (`modeOrPricing`) pode ser um objeto de payload (quando não há modo),
+    * ou uma string de modo (SIMPLES, TROCA, COMPLETA), em seguida o payload.
+    */
   async setPricing(
     productId: string,
     depositId: string,
     modeOrPricing: PricingMode | PricingPayload,
     maybePricing?: PricingPayload
   ): Promise<ProductPricing> {
+    const supportsMode = await ensurePricingModeMigration();
     const pricing = isPricingPayload(modeOrPricing) ? modeOrPricing : maybePricing;
     if (!pricing) {
-      throw new Error('Payload de precificacao obrigatorio');
+      throw new Error('Payload de precificação obrigatório');
     }
     const normalizedMode = isPricingPayload(modeOrPricing)
       ? 'SIMPLES'
@@ -376,35 +359,95 @@ export const productService = {
       };
     }
 
-    const priceColumn =
+    if (supportsMode) {
+      const pricingPayload = {
+        product_id: productId,
+        deposit_id: depositId,
+        mode: normalizedMode,
+        price: priceValue,
+      };
+
+      const { error: upsertError } = await supabase
+        .from('product_pricing')
+        .upsert(pricingPayload, { onConflict: 'product_id,deposit_id,mode' });
+
+      if (upsertError) throw new Error(`Erro ao gravar precificacao no deposito: ${upsertError.message}`);
+
+      const result = await this.getPricing(productId, depositId, normalizedMode);
+      if (result) return result;
+      const sale = normalizedMode === 'SIMPLES' ? priceValue : 0;
+      const exchange = normalizedMode === 'TROCA' ? priceValue : 0;
+      const full = normalizedMode === 'COMPLETA' ? priceValue : 0;
+      const selected =
+        normalizedMode === 'TROCA'
+          ? exchange
+          : normalizedMode === 'COMPLETA'
+            ? full
+            : sale;
+      return {
+        product_id: productId,
+        deposit_id: depositId,
+        mode: normalizedMode,
+        price: selected,
+        sale_price: sale,
+        exchange_price: exchange,
+        full_price: full,
+      };
+    }
+
+    const targetColumn =
       normalizedMode === 'TROCA'
         ? 'exchange_price'
         : normalizedMode === 'COMPLETA'
           ? 'full_price'
           : 'price';
-    const pricingPayload = {
-      product_id: productId,
-      deposit_id: depositId,
-      [priceColumn]: priceValue,
-    };
 
-    const { error: upsertError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from('product_pricing')
-      .upsert(pricingPayload, { onConflict: 'product_id,deposit_id' });
+      .update({ [targetColumn]: priceValue })
+      .eq('product_id', productId)
+      .eq('deposit_id', depositId)
+      .select('product_id, deposit_id, price, exchange_price, full_price');
 
-    if (upsertError) throw new Error(`Erro ao gravar precificacao no deposito: ${upsertError.message}`);
+    if (updateError) {
+      throw new Error(`Erro ao gravar precificacao no deposito: ${updateError.message}`);
+    }
 
-    const result = await this.getPricing(productId, depositId, normalizedMode);
-    if (result) return result;
-    const sale = normalizedMode === 'SIMPLES' ? priceValue : 0;
-    const exchange = normalizedMode === 'TROCA' ? priceValue : 0;
-    const full = normalizedMode === 'COMPLETA' ? priceValue : 0;
+    let row = updated?.[0] ?? null;
+
+    if (!row) {
+      const insertPayload: any = {
+        product_id: productId,
+        deposit_id: depositId,
+        price: targetColumn === 'price' ? priceValue : 0,
+        exchange_price: null,
+        full_price: null,
+      };
+      insertPayload[targetColumn] = priceValue;
+      const { data: inserted, error: insertError } = await supabase
+        .from('product_pricing')
+        .insert(insertPayload)
+        .select('product_id, deposit_id, price, exchange_price, full_price');
+
+      if (insertError) {
+        throw new Error(`Erro ao gravar precificacao no deposito: ${insertError.message}`);
+      }
+
+      row = inserted?.[0] ?? null;
+    }
+
+    updatePricingModeSupportFromRows(row ? [row] : []);
+
+    const sale = Number(row?.price ?? 0);
+    const exchange = Number(row?.exchange_price ?? 0);
+    const full = Number(row?.full_price ?? 0);
     const selected =
       normalizedMode === 'TROCA'
         ? exchange
         : normalizedMode === 'COMPLETA'
           ? full
           : sale;
+
     return {
       product_id: productId,
       deposit_id: depositId,
@@ -440,31 +483,79 @@ export const productService = {
    * 12. Listar todas as precificações ativas de um produto (por depósito)
    */
   async listPricingByProduct(productId: string): Promise<ProductPricing[]> {
+    const supportsMode = await ensurePricingModeMigration();
     const { data, error } = await supabase
       .from('product_pricing')
-      .select('product_id, deposit_id, price, exchange_price, full_price, mode')
+      .select('*')
       .eq('product_id', productId);
 
     if (error) throw new Error(`Erro ao listar precos do produto: ${error.message}`);
 
+    updatePricingModeSupportFromRows(data);
+    const useMode = (data && data.length > 0 && hasModeColumn(data[0])) || supportsMode;
+
+    if (useMode) {
+      return (data || []).map(row => ({
+        product_id: row.product_id,
+        deposit_id: row.deposit_id,
+        mode: normalizePricingMode((row as any).mode ?? 'SIMPLES'),
+        price: row.price ?? 0,
+        sale_price: row.price ?? null,
+        exchange_price: null,
+        full_price: null,
+      }));
+    }
+
     return (data || []).map(row => ({
       product_id: row.product_id,
       deposit_id: row.deposit_id,
-      mode: normalizePricingMode((row as any).mode ?? 'SIMPLES'),
+      mode: null as any,
       price: row.price ?? 0,
       sale_price: row.price ?? null,
-      exchange_price: (row as any).exchange_price ?? null,
-      full_price: (row as any).full_price ?? null,
+      exchange_price: row.exchange_price ?? null,
+      full_price: row.full_price ?? null,
     }));
   },
 
   /**
    * 13. Remover (apagar) precificação específica de um depósito
    */
-  async removePricing(productId: string, depositId: string): Promise<void> {
+  async removePricing(productId: string, depositId: string, mode?: PricingMode): Promise<void> {
+    const supportsMode = await ensurePricingModeMigration();
+    if (supportsMode) {
+      let query = supabase
+        .from('product_pricing')
+        .delete()
+        .eq('product_id', productId)
+        .eq('deposit_id', depositId);
+      if (mode) {
+        query = query.eq('mode', normalizePricingMode(mode));
+      }
+      const { error } = await query;
+
+      if (error) throw new Error(`Erro ao remover precificacao do deposito: ${error.message}`);
+      return;
+    }
+
+    if (!mode) {
+      const { error } = await supabase
+        .from('product_pricing')
+        .delete()
+        .eq('product_id', productId)
+        .eq('deposit_id', depositId);
+      if (error) throw new Error(`Erro ao remover precificacao do deposito: ${error.message}`);
+      return;
+    }
+
+    const targetColumn =
+      normalizePricingMode(mode) === 'TROCA'
+        ? 'exchange_price'
+        : normalizePricingMode(mode) === 'COMPLETA'
+          ? 'full_price'
+          : 'price';
     const { error } = await supabase
       .from('product_pricing')
-      .delete()
+      .update({ [targetColumn]: 0 })
       .eq('product_id', productId)
       .eq('deposit_id', depositId);
 

@@ -181,13 +181,13 @@ export interface ProductExchangeRule {
  * - depositoId: ID do depósito específico
  * - price: Preço de venda neste depósito
  * 
- * REGRA: Unique constraint (productId + depositoId)
+ * REGRA: Unique constraint (productId + depositoId + mode)
  */
 export interface ProductPricing {
   id: string;
   productId: string;         // ✅ FK para products.id
   depositoId: string;        // ✅ FK para deposits.id
-  mode?: PricingMode;         // ✅ Modalidade do preco
+  mode: PricingMode;          // ✅ Modalidade do preco
   price: number;             // ✅ Preço de venda específico deste depósito
   created_at?: string | null;
   updated_at?: string | null;

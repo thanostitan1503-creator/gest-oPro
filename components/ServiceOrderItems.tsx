@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trash2, HelpCircle, Package, RefreshCw, ShoppingBag, Info, X } from 'lucide-react';
 import { useLiveQuery, db } from '@/utils/legacyHelpers';
-import { resolveProductPrice, type PricingRow } from '@/utils/pricing';
+import { resolvePrice, type PricingRow } from '@/utils/pricing';
 import { toast } from 'sonner';
 
 export interface OrderItem {
@@ -178,11 +178,24 @@ export function ServiceOrderItems({
   /** Verifica se o produto permite escolha de modalidade (TROCA/COMPLETA) */
   const productAllowsModeChoice = (product: any): boolean => {
     const raw = String(product?.movement_type ?? product?.movementType ?? '').toUpperCase();
-    return raw === 'EXCHANGE';
+    if (raw === 'EXCHANGE') return true;
+    const tipo = String(product?.tipo ?? product?.type ?? '').toUpperCase();
+    return tipo === 'VASILHAME_VAZIO' || tipo === 'EMPTY_CONTAINER';
   };
 
-  const resolveFallbackPrice = (product: any, _saleMode: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null) => {
-    return resolveProductPrice(product.id, activeDepositId, pricingRows);
+  const resolvePricingMode = (saleMode: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null | undefined) => {
+    if (saleMode === 'EXCHANGE') return 'TROCA';
+    if (saleMode === 'FULL') return 'COMPLETA';
+    return 'SIMPLES';
+  };
+
+  const resolveProductPrice = (productId: string, saleMode: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null) => {
+    return resolvePrice({
+      productId,
+      depositId: activeDepositId,
+      mode: resolvePricingMode(saleMode),
+      rows: pricingRows,
+    });
   };
 
   const handleAddItem = async () => {
@@ -196,8 +209,8 @@ export function ServiceOrderItems({
       return;
     }
 
-    // Produto simples: adiciona direto
-    await addItemWithMode(product, 'SIMPLE');
+    const defaultMode = resolveSaleMovementType(product) ?? 'SIMPLE';
+    await addItemWithMode(product, defaultMode);
   };
 
   /** Adiciona item ao carrinho com a modalidade especificada */
@@ -206,12 +219,11 @@ export function ServiceOrderItems({
     const name = product.nome ?? product.name ?? '';
     const type = isServiceProduct(product) ? 'SERVICO' : product.tipo ?? product.type ?? '';
 
-    const unitPrice = resolveProductPrice(product.id, activeDepositId, pricingRows);
-    const total = unitPrice * qty;
+    const unitPrice = resolveProductPrice(product.id, saleMode);
 
     const existing = items.find((i) => i.produtoId === product.id && i.sale_movement_type === saleMode);
     if (existing) {
-      const resolved = resolveProductPrice(product.id, activeDepositId, pricingRows);
+      const resolved = resolveProductPrice(product.id, saleMode);
       const displayUnit =
         (existing.precoUnitario ?? 0) === 0 && resolved > 0
           ? resolved
@@ -248,7 +260,9 @@ export function ServiceOrderItems({
     if (items.length === 0 || pricingRows.length === 0) return;
     let changed = false;
     const nextItems = items.map((item) => {
-      const resolved = resolveProductPrice(item.produtoId, activeDepositId, pricingRows);
+      const product = productsById.get(item.produtoId);
+      const inferredMode = item.sale_movement_type ?? resolveSaleMovementType(product);
+      const resolved = resolveProductPrice(item.produtoId, inferredMode);
       const displayUnit =
         (item.precoUnitario ?? 0) === 0 && resolved > 0
           ? resolved
@@ -260,7 +274,7 @@ export function ServiceOrderItems({
       return item;
     });
     if (changed) setItems(nextItems);
-  }, [activeDepositId, items, pricingRows, setItems]);
+  }, [activeDepositId, items, pricingRows, productsById, resolveSaleMovementType, resolveProductPrice, setItems]);
 
   /** Handler do modal - confirma escolha de modalidade */
   const handleSaleModeConfirm = async (mode: 'EXCHANGE' | 'FULL') => {
@@ -382,9 +396,11 @@ export function ServiceOrderItems({
             ) : (
               items.map((item) => {
                 const isLocked = lockedProductIds?.includes(item.produtoId);
-                const modeKey = (item.sale_movement_type || 'SIMPLE') as keyof typeof SALE_MODE_INFO;
+                const product = productsById.get(item.produtoId);
+                const inferredMode = item.sale_movement_type ?? resolveSaleMovementType(product);
+                const modeKey = (inferredMode || 'SIMPLE') as keyof typeof SALE_MODE_INFO;
                 const modeInfo = SALE_MODE_INFO[modeKey] || SALE_MODE_INFO.SIMPLE;
-                const resolved = resolveProductPrice(item.produtoId, activeDepositId, pricingRows);
+                const resolved = resolveProductPrice(item.produtoId, inferredMode);
                 const displayUnit =
                   (item.precoUnitario ?? 0) === 0 && resolved > 0
                     ? resolved
@@ -441,8 +457,8 @@ export function ServiceOrderItems({
 
       {/* Modal de Seleção de Modalidade */}
       {showSaleModeModal && pendingProduct && (() => {
-        const precoTroca = resolveFallbackPrice(pendingProduct, 'EXCHANGE');
-        const precoCompleta = resolveFallbackPrice(pendingProduct, 'FULL');
+        const precoTroca = resolveProductPrice(pendingProduct.id, 'EXCHANGE');
+        const precoCompleta = resolveProductPrice(pendingProduct.id, 'FULL');
         
         return (
           <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4">

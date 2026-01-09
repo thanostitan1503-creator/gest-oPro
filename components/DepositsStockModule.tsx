@@ -11,7 +11,7 @@ import {
   useLiveQuery, db,
 } from '@/utils/legacyHelpers';
 import { employeeService, productService, type ProductPricing as ProductPricingRow } from '@/services';
-import { resolveProductPrice } from '@/utils/pricing';
+import { resolvePrice } from '@/utils/pricing';
 import { toast } from 'sonner';
 import { SYSTEM_USER_ID } from '@/constants/system';
 
@@ -104,7 +104,9 @@ const MOVEMENT_TYPES = [
 ];
 
 type PricingForm = {
-  price: number | '';
+  simple: number | '';
+  troca: number | '';
+  completa: number | '';
 };
 
 const PRESET_COLORS = [
@@ -141,8 +143,9 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [deleteProductModal, setDeleteProductModal] = useState<Product | null>(null);
   const [pricingByDeposit, setPricingByDeposit] = useState<Record<string, PricingForm>>({});
-  const [existingPricingDeposits, setExistingPricingDeposits] = useState<Set<string>>(new Set());
+  const [existingPricingKeys, setExistingPricingKeys] = useState<Set<string>>(new Set());
   const [pricingLoading, setPricingLoading] = useState(false);
+  const [pricingRefreshKey, setPricingRefreshKey] = useState(0);
   
   // Transfer state
   const [transferForm, setTransferForm] = useState<TransferForm>({
@@ -222,7 +225,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   
   const serviceOrders = useLiveQuery(() => db.service_orders.toArray()) ?? [];
   const stockBalance = useLiveQuery(() => db.stock_balance.toArray(), [refreshKey]) ?? [];
-  const productPricings = useLiveQuery(() => db.product_pricing?.toArray() ?? []) ?? [];
+  const productPricings = useLiveQuery(() => db.product_pricing?.toArray() ?? [], [pricingRefreshKey]) ?? [];
 
   // -------------------------------------------------------------------------
   // COMPUTED
@@ -278,9 +281,31 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     return activeDeposits[0]?.id ?? null;
   }, [countForm.depositId, activeDeposits]);
 
-  const getDisplayPrice = useCallback((productId: string) => {
-    return resolveProductPrice(productId, activePricingDepositId, productPricings);
+  const resolveDisplayMode = useCallback((product: Product) => {
+    const raw = String((product as any).movement_type ?? (product as any).movementType ?? '').toUpperCase();
+    if (raw === 'EXCHANGE') return 'TROCA';
+    if (raw === 'FULL') return 'COMPLETA';
+    return 'SIMPLES';
+  }, []);
+
+  const getDisplayPrice = useCallback((product: Product) => {
+    return resolvePrice({
+      productId: product.id,
+      depositId: activePricingDepositId,
+      mode: resolveDisplayMode(product),
+      rows: productPricings,
+    });
+  }, [activePricingDepositId, productPricings, resolveDisplayMode]);
+
+  const getDisplayPriceForMode = useCallback((product: Product, mode: 'SIMPLES' | 'TROCA' | 'COMPLETA') => {
+    return resolvePrice({
+      productId: product.id,
+      depositId: activePricingDepositId,
+      mode,
+      rows: productPricings,
+    });
   }, [activePricingDepositId, productPricings]);
+
 
   // -------------------------------------------------------------------------
   // HELPERS - PRECIFICAÇÃO POR DEPÓSITO
@@ -294,8 +319,27 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   const getBasePricingFromForm = useCallback((base?: Partial<ProductForm>): PricingForm => {
     const src = base ?? productForm;
     const basePrice = normalizeMoney(src.preco_venda ?? 0);
-    return { price: basePrice };
+    const troca = normalizeMoney(src.preco_troca ?? basePrice);
+    const completa = normalizeMoney(src.preco_completa ?? basePrice);
+    return {
+      simple: basePrice,
+      troca,
+      completa,
+    };
   }, [normalizeMoney, productForm]);
+
+  const getPricingValueForMovement = useCallback((pricing: PricingForm) => {
+    if (productForm.movement_type === 'EXCHANGE') return pricing.troca;
+    if (productForm.movement_type === 'FULL') return pricing.completa;
+    return pricing.simple;
+  }, [productForm.movement_type]);
+
+  const normalizePricingMode = useCallback((value: unknown) => {
+    const raw = String(value ?? '').toUpperCase();
+    if (raw === 'TROCA' || raw === 'EXCHANGE') return 'TROCA';
+    if (raw === 'COMPLETA' || raw === 'FULL') return 'COMPLETA';
+    return 'SIMPLES';
+  }, []);
 
   const hydratePricingState = useCallback((rows?: ProductPricingRow[], base?: Partial<ProductForm>) => {
     const defaults = getBasePricingFromForm(base);
@@ -303,20 +347,39 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     const next: Record<string, PricingForm> = {};
 
     activeDeposits.forEach(dep => {
-      const row = rows?.find(r => (r as any).deposit_id === dep.id);
-      if (row) {
-        existing.add(dep.id);
-        next[dep.id] = {
-          price: normalizeMoney((row as any).price ?? 0),
-        };
-      } else {
-        next[dep.id] = { ...defaults };
-      }
+      const depositRows = rows?.filter(r => (r as any).deposit_id === dep.id) ?? [];
+      const simpleRow = depositRows.find(r => normalizePricingMode((r as any).mode) === 'SIMPLES');
+      const trocaRow = depositRows.find(r => normalizePricingMode((r as any).mode) === 'TROCA');
+      const completaRow = depositRows.find(r => normalizePricingMode((r as any).mode) === 'COMPLETA');
+      const legacyRow = depositRows.find(r => {
+        const modeValue = (r as any).mode;
+        return modeValue === null || modeValue === undefined || String(modeValue).trim() === '';
+      });
+
+      const legacySimple = legacyRow ? normalizeMoney((legacyRow as any).price ?? (legacyRow as any).sale_price ?? 0) : null;
+      const legacyTroca = legacyRow ? normalizeMoney((legacyRow as any).exchange_price ?? 0) : null;
+      const legacyCompleta = legacyRow ? normalizeMoney((legacyRow as any).full_price ?? 0) : null;
+
+      if (simpleRow || (legacySimple !== null && legacySimple > 0)) existing.add(`${dep.id}::SIMPLES`);
+      if (trocaRow || (legacyTroca !== null && legacyTroca > 0)) existing.add(`${dep.id}::TROCA`);
+      if (completaRow || (legacyCompleta !== null && legacyCompleta > 0)) existing.add(`${dep.id}::COMPLETA`);
+
+      next[dep.id] = {
+        simple: simpleRow
+          ? normalizeMoney((simpleRow as any).price ?? 0)
+          : (legacySimple !== null ? legacySimple : defaults.simple),
+        troca: trocaRow
+          ? normalizeMoney((trocaRow as any).price ?? 0)
+          : (legacyTroca !== null ? legacyTroca : defaults.troca),
+        completa: completaRow
+          ? normalizeMoney((completaRow as any).price ?? 0)
+          : (legacyCompleta !== null ? legacyCompleta : defaults.completa),
+      };
     });
 
-    setExistingPricingDeposits(existing);
+    setExistingPricingKeys(existing);
     setPricingByDeposit(next);
-  }, [activeDeposits, getBasePricingFromForm, normalizeMoney]);
+  }, [activeDeposits, getBasePricingFromForm, normalizeMoney, normalizePricingMode]);
 
   const loadPricingForProduct = useCallback(async (productId: string, base: ProductForm) => {
     setPricingLoading(true);
@@ -386,28 +449,44 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   }, [getBasePricingFromForm, normalizeMoney]);
 
   const persistPricing = useCallback(async (productId: string, movement: StockMovementRule) => {
+    const saveModePricing = async (depositId: string, mode: 'SIMPLES' | 'TROCA' | 'COMPLETA', value: number | '') => {
+      const priceValue = normalizeMoney(value);
+      const key = `${depositId}::${mode}`;
+
+      if (!priceValue || Number.isNaN(priceValue)) {
+        if (existingPricingKeys.has(key)) {
+          await productService.removePricing(productId, depositId, mode);
+        }
+        return;
+      }
+
+      await productService.setPricing(productId, depositId, mode, {
+        price: priceValue,
+      });
+    };
+
     const tasks = activeDeposits.map(async (dep) => {
       const pricing = pricingByDeposit[dep.id];
       if (!pricing) return null;
 
-      const priceValue = normalizeMoney(pricing.price);
-
-      // Se não houver preço informado, apaga entrada existente
-      if (!priceValue || Number.isNaN(priceValue)) {
-        if (existingPricingDeposits.has(dep.id)) {
-          await productService.removePricing(productId, dep.id);
-        }
-        return null;
+      if (movement === 'EXCHANGE') {
+        await saveModePricing(dep.id, 'TROCA', pricing.troca);
+        await saveModePricing(dep.id, 'COMPLETA', pricing.completa);
+        return true;
       }
 
-      await productService.setPricing(productId, dep.id, {
-        price: priceValue,
-      });
+      if (movement === 'FULL') {
+        await saveModePricing(dep.id, 'COMPLETA', pricing.completa);
+        return true;
+      }
+
+      await saveModePricing(dep.id, 'SIMPLES', pricing.simple);
       return true;
     });
 
     await Promise.all(tasks);
-  }, [activeDeposits, existingPricingDeposits, normalizeMoney, pricingByDeposit]);
+    setPricingRefreshKey((prev) => prev + 1);
+  }, [activeDeposits, existingPricingKeys, normalizeMoney, pricingByDeposit]);
 
   // Sincroniza estado de precificação quando o tipo de movimento muda
   useEffect(() => {
@@ -585,7 +664,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   const handleNewProduct = () => {
     setProductForm(EMPTY_PRODUCT_FORM);
     setIsEditingProduct(true);
-    setExistingPricingDeposits(new Set());
+    setExistingPricingKeys(new Set());
     hydratePricingState(undefined, EMPTY_PRODUCT_FORM);
   };
 
@@ -614,7 +693,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     setProductForm(EMPTY_PRODUCT_FORM);
     setIsEditingProduct(false);
     setPricingByDeposit({});
-    setExistingPricingDeposits(new Set());
+    setExistingPricingKeys(new Set());
   };
 
   const handleSaveProduct = async () => {
@@ -731,7 +810,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       setProductForm(EMPTY_PRODUCT_FORM);
       setIsEditingProduct(false);
       setPricingByDeposit({});
-      setExistingPricingDeposits(new Set());
+      setExistingPricingKeys(new Set());
       toast.success('Produto salvo com sucesso!');
     } catch (error) {
       console.error('Erro ao salvar produto:', error);
@@ -763,7 +842,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       for (const sb of stockToDelete) {
         await db.stock_balance?.delete(sb.id);
       }
-      const pricingToDelete = await db.product_pricing?.filter(pp => pp.productId === productId).toArray() ?? [];
+      const pricingToDelete = await db.product_pricing?.filter(pp => pp.product_id === productId || pp.productId === productId).toArray() ?? [];
       for (const pp of pricingToDelete) {
         await db.product_pricing?.delete(pp.id);
       }
@@ -979,10 +1058,17 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         !depositIds.has(sb.deposit_id) || !productIds.has(sb.product_id)
       );
 
-      // 3. Product pricing órfão (usa productId e depositoId - camelCase)
-      const orphanPricing = allProductPricing.filter(pp => 
-        !depositIds.has(pp.depositoId) || !productIds.has(pp.productId)
-      ).map(pp => ({ product_id: pp.productId, deposit_id: pp.depositoId }));
+      // 3. Product pricing órfão (suporta snake_case e camelCase)
+      const getPricingDepositId = (pp: any) => pp.deposit_id ?? pp.depositoId ?? pp.depositId ?? null;
+      const getPricingProductId = (pp: any) => pp.product_id ?? pp.productId ?? null;
+      const orphanPricing = allProductPricing.filter(pp => {
+        const depositId = getPricingDepositId(pp);
+        const productId = getPricingProductId(pp);
+        return !depositId || !productId || !depositIds.has(depositId) || !productIds.has(productId);
+      }).map(pp => ({
+        product_id: getPricingProductId(pp),
+        deposit_id: getPricingDepositId(pp),
+      }));
 
       setOrphanData({
         duplicateProducts,
@@ -1100,11 +1186,14 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       // Usar filter e delete por id (mais seguro - usa productId e depositoId camelCase)
       const allPricing = await db.product_pricing?.toArray() ?? [];
       for (const orphan of orphanData.orphanPricing) {
-        const toDelete = allPricing.find(p => 
-          p.productId === orphan.product_id && p.depositoId === orphan.deposit_id
+        const matches = allPricing.filter(p => 
+          (p.product_id ?? p.productId) === orphan.product_id &&
+          (p.deposit_id ?? p.depositoId ?? p.depositId) === orphan.deposit_id
         );
-        if (toDelete?.id) {
-          await db.product_pricing?.delete(toDelete.id);
+        for (const row of matches) {
+          if (row?.id) {
+            await db.product_pricing?.delete(row.id);
+          }
         }
       }
       alert('Preços órfãos removidos com sucesso!');
@@ -1542,7 +1631,13 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                     </div>
                   ) : (
                     filteredProducts.map(product => {
-                      const displayPrice = getDisplayPrice(product.id);
+                      const displayPrice = getDisplayPrice(product);
+                      const trocaPrice = product.movement_type === 'EXCHANGE'
+                        ? getDisplayPriceForMode(product, 'TROCA')
+                        : displayPrice;
+                      const completaPrice = product.movement_type === 'EXCHANGE'
+                        ? getDisplayPriceForMode(product, 'COMPLETA')
+                        : displayPrice;
                       return (
                         <div
                           key={product.id}
@@ -1580,13 +1675,13 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                                   <div className="flex items-center justify-end gap-2">
                                     <span className="text-[10px] text-yellow-400 font-bold bg-yellow-500/10 px-1.5 py-0.5 rounded">TROCA</span>
                                     <span className="font-bold text-green-500">
-                                      R$ {displayPrice.toFixed(2)}
+                                      R$ {trocaPrice.toFixed(2)}
                                     </span>
                                   </div>
                                   <div className="flex items-center justify-end gap-2">
                                     <span className="text-[10px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded">COMPLETA</span>
                                     <span className="font-bold text-blue-400">
-                                      R$ {displayPrice.toFixed(2)}
+                                      R$ {completaPrice.toFixed(2)}
                                     </span>
                                   </div>
                                 </div>
@@ -1724,7 +1819,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                       </div>
 
                       {/* Vínculo com Vasilhame Vazio (só aparece se EXCHANGE) */}
-                      {productForm.movement_type === 'EXCHANGE' && (
+                      {productForm.movement_type === 'EXCHANGE' && activeDeposits.length === 0 && (
                         <div>
                           <label className="block text-xs font-bold text-txt-muted uppercase tracking-wide mb-2">
                             <AlertTriangle className="w-3 h-3 inline mr-1 text-yellow-500" />
@@ -1821,12 +1916,17 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                       </div>
 
                       {/* Margem calculada baseada no primeiro depósito com preço */}
-                      {productForm.preco_custo > 0 && Object.values(pricingByDeposit).some(p => typeof p.price === 'number' && p.price > 0) && (
+                      {productForm.preco_custo > 0 && Object.values(pricingByDeposit).some(p => {
+                        const value = getPricingValueForMovement(p);
+                        return typeof value === 'number' && value > 0;
+                      }) && (
                         <div className="bg-app rounded-xl p-4 border border-bdr">
                           <div className="text-xs text-txt-muted uppercase tracking-wide mb-1">Margem de Lucro (estimada)</div>
                           <div className="text-2xl font-black text-green-500">
                             {(() => {
-                              const firstPrice = Object.values(pricingByDeposit).find(p => typeof p.price === 'number' && p.price > 0)?.price as number;
+                              const firstPrice = Object.values(pricingByDeposit)
+                                .map(p => getPricingValueForMovement(p))
+                                .find(value => typeof value === 'number' && value > 0) as number;
                               return (((firstPrice - productForm.preco_custo) / productForm.preco_custo) * 100).toFixed(1);
                             })()}%
                           </div>
@@ -1859,17 +1959,61 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                                       <p className="font-bold text-txt-main text-sm">{dep.nome}</p>
                                     </div>
                                     <div className="flex-1">
-                                      <div className="relative">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">R$</span>
-                                        <input
-                                          type="number"
-                                          step="0.01"
-                                          value={pricing.price === '' ? '' : pricing.price}
-                                          onChange={(e) => handlePricingInput(dep.id, 'price', e.target.value)}
-                                          className="w-full bg-white text-slate-900 border-2 border-amber-200 rounded-xl p-3 pl-10 text-sm font-bold outline-none"
-                                          placeholder="0.00"
-                                        />
-                                      </div>
+                                      {productForm.movement_type === 'EXCHANGE' ? (
+                                        <div className="grid gap-3 md:grid-cols-2">
+                                          <div>
+                                            <label className="block text-[10px] font-black text-yellow-500 uppercase mb-1">TROCA</label>
+                                            <div className="relative">
+                                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">R$</span>
+                                              <input
+                                                type="number"
+                                                step="0.01"
+                                                value={pricing.troca === '' ? '' : pricing.troca}
+                                                onChange={(e) => handlePricingInput(dep.id, 'troca', e.target.value)}
+                                                className="w-full bg-white text-slate-900 border-2 border-yellow-200 rounded-xl p-3 pl-10 text-sm font-bold outline-none"
+                                                placeholder="0.00"
+                                              />
+                                            </div>
+                                          </div>
+                                          <div>
+                                            <label className="block text-[10px] font-black text-blue-500 uppercase mb-1">COMPLETA</label>
+                                            <div className="relative">
+                                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">R$</span>
+                                              <input
+                                                type="number"
+                                                step="0.01"
+                                                value={pricing.completa === '' ? '' : pricing.completa}
+                                                onChange={(e) => handlePricingInput(dep.id, 'completa', e.target.value)}
+                                                className="w-full bg-white text-slate-900 border-2 border-blue-200 rounded-xl p-3 pl-10 text-sm font-bold outline-none"
+                                                placeholder="0.00"
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div>
+                                          <label className="block text-[10px] font-black text-emerald-600 uppercase mb-1">
+                                            {productForm.movement_type === 'FULL' ? 'COMPLETA' : 'SIMPLES'}
+                                          </label>
+                                          <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-bold">R$</span>
+                                            <input
+                                              type="number"
+                                              step="0.01"
+                                              value={productForm.movement_type === 'FULL'
+                                                ? (pricing.completa === '' ? '' : pricing.completa)
+                                                : (pricing.simple === '' ? '' : pricing.simple)}
+                                              onChange={(e) => handlePricingInput(
+                                                dep.id,
+                                                productForm.movement_type === 'FULL' ? 'completa' : 'simple',
+                                                e.target.value
+                                              )}
+                                              className="w-full bg-white text-slate-900 border-2 border-emerald-200 rounded-xl p-3 pl-10 text-sm font-bold outline-none"
+                                              placeholder="0.00"
+                                            />
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
