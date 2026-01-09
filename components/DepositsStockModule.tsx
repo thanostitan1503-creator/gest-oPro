@@ -141,6 +141,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [showInactiveProducts, setShowInactiveProducts] = useState(false);
   const [deleteProductModal, setDeleteProductModal] = useState<Product | null>(null);
   const [pricingByDeposit, setPricingByDeposit] = useState<Record<string, PricingForm>>({});
   const [existingPricingKeys, setExistingPricingKeys] = useState<Set<string>>(new Set());
@@ -317,16 +318,12 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
   }, []);
 
   const getBasePricingFromForm = useCallback((base?: Partial<ProductForm>): PricingForm => {
-    const src = base ?? productForm;
-    const basePrice = normalizeMoney(src.preco_venda ?? 0);
-    const troca = normalizeMoney(src.preco_troca ?? basePrice);
-    const completa = normalizeMoney(src.preco_completa ?? basePrice);
     return {
-      simple: basePrice,
-      troca,
-      completa,
+      simple: '',
+      troca: '',
+      completa: '',
     };
-  }, [normalizeMoney, productForm]);
+  }, []);
 
   const getPricingValueForMovement = useCallback((pricing: PricingForm) => {
     if (productForm.movement_type === 'EXCHANGE') return pricing.troca;
@@ -400,9 +397,9 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
     try {
       let rows: Product[] = [];
       if (depositId) {
-        rows = await productService.getByDeposit(depositId);
+        rows = await productService.getByDeposit(depositId, { includeInactive: showInactiveProducts });
       } else {
-        rows = await productService.getAll();
+        rows = await productService.getAll({ includeInactive: showInactiveProducts });
         // NÃO filtrar deposit_id=null na gestão central!
       }
       // Corrige mapeamento para garantir nome/preço
@@ -427,12 +424,23 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       console.error('Erro ao carregar produtos do serviço:', err);
       toast.error('Erro ao carregar produtos (online)');
     }
-  }, []);
+  }, [showInactiveProducts]);
 
   // Carrega produtos ao montar ou ao atualizar refreshKey
   useEffect(() => {
     loadProducts();
   }, [refreshKey, loadProducts]);
+
+  const handleReactivateProduct = useCallback(async (productId: string) => {
+    try {
+      await productService.update(productId, { is_active: true });
+      toast.success('Produto reativado com sucesso!');
+      await loadProducts();
+    } catch (error) {
+      console.error('Erro ao reativar produto:', error);
+      toast.error('Não foi possível reativar o produto');
+    }
+  }, [loadProducts]);
 
   const handlePricingInput = useCallback((depositId: string, field: keyof PricingForm, rawValue: string) => {
     setPricingByDeposit(prev => {
@@ -710,25 +718,9 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
 
     setSavingProduct(true);
     try {
-      // Preço de venda base (sempre usar preco_venda como referência principal)
+      // Preço de venda base (legado) usado apenas para indicadores internos
       const baseSalePrice = normalizeMoney(productForm.preco_venda);
       const costValue = normalizeMoney(productForm.preco_custo);
-      
-      // Preços específicos para EXCHANGE - SÓ salvar se foram preenchidos
-      let precoTroca = null;
-      let precoCompleta = null;
-      
-      if (productForm.movement_type === 'EXCHANGE') {
-        // Se preço_troca foi preenchido, usar esse valor; caso contrário, usar preco_venda
-        precoTroca = productForm.preco_troca != null 
-          ? normalizeMoney(productForm.preco_troca)
-          : normalizeMoney(baseSalePrice);
-        
-        // Se preço_completa foi preenchido, usar esse valor; caso contrário, usar preco_venda
-        precoCompleta = productForm.preco_completa != null 
-          ? normalizeMoney(productForm.preco_completa)
-          : normalizeMoney(baseSalePrice);
-      }
       
       console.log('[handleSaveProduct] Salvando produto:', {
         id: productForm.id,
@@ -736,10 +728,6 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         movement_type: productForm.movement_type,
         return_product_id: productForm.return_product_id,
         baseSalePrice,
-        precoTroca,
-        precoCompleta,
-        formPrecoTroca: productForm.preco_troca,
-        formPrecoCompleta: productForm.preco_completa,
       });
 
       const productData: Product = {
@@ -752,8 +740,6 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
         preco_venda: baseSalePrice,
         preco_custo: costValue,
         preco_padrao: baseSalePrice,
-        preco_troca: precoTroca,
-        preco_completa: precoCompleta,
         track_stock: productForm.track_stock,
         ativo: productForm.ativo,
         // Campos obrigatórios com defaults
@@ -772,12 +758,19 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
 
       // Online save via productService
       let savedProduct: any = null;
+      const payload: any = { ...productData };
+      delete payload.preco_venda;
+      delete payload.preco_troca;
+      delete payload.preco_completa;
+      delete payload.sale_price;
+      delete payload.exchange_price;
+      delete payload.full_price;
       console.log('[handleSaveProduct] Enviando produto online', productData.id ? 'update' : 'create', productData.nome);
       if (productForm.id) {
         // Atualizar
-        savedProduct = await productService.update(productData.id, productData as any);
+        savedProduct = await productService.update(productData.id, payload);
       } else {
-        savedProduct = await productService.create(productData as any);
+        savedProduct = await productService.create(payload);
       }
 
       // Persistir precificação por depósito (usa product_pricing agora)
@@ -792,9 +785,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
           codigo: `${productData.codigo || ''}_VAZIO`,
           tipo: 'VASILHAME_VAZIO',
           movement_type: 'SIMPLE',
-          preco_venda: 0,
           preco_custo: 0,
-          preco_padrao: 0,
           track_stock: true,
           ativo: true,
         } as any;
@@ -1610,15 +1601,26 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
 
                 {/* Busca */}
                 <div className="p-3 border-b border-bdr">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-txt-muted" />
-                    <input
-                      type="text"
-                      placeholder="Buscar produto..."
-                      value={productSearchTerm}
-                      onChange={e => setProductSearchTerm(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 bg-app border border-bdr rounded-lg text-sm focus:ring-2 focus:ring-purple-500/20 outline-none"
-                    />
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-txt-muted" />
+                      <input
+                        type="text"
+                        placeholder="Buscar produto..."
+                        value={productSearchTerm}
+                        onChange={e => setProductSearchTerm(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2 bg-app border border-bdr rounded-lg text-sm focus:ring-2 focus:ring-purple-500/20 outline-none"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-[11px] font-bold text-txt-muted uppercase tracking-wide">
+                      <input
+                        type="checkbox"
+                        checked={showInactiveProducts}
+                        onChange={e => setShowInactiveProducts(e.target.checked)}
+                        className="w-4 h-4 rounded text-purple-500 focus:ring-purple-500"
+                      />
+                      Mostrar desativados
+                    </label>
                   </div>
                 </div>
 
@@ -1631,6 +1633,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                     </div>
                   ) : (
                     filteredProducts.map(product => {
+                      const isInactive = (product as any).is_active === false || (product as any).ativo === false;
                       const displayPrice = getDisplayPrice(product);
                       const trocaPrice = product.movement_type === 'EXCHANGE'
                         ? getDisplayPriceForMode(product, 'TROCA')
@@ -1643,7 +1646,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                           key={product.id}
                           className={`p-4 border-b border-bdr hover:bg-app/50 cursor-pointer transition-colors ${
                             productForm.id === product.id ? 'bg-purple-500/10 border-l-4 border-l-purple-500' : ''
-                          } ${!product.ativo ? 'opacity-50' : ''}`}
+                          } ${isInactive ? 'opacity-50' : ''}`}
                           onClick={() => handleEditProduct(product)}
                         >
                           <div className="flex items-center justify-between">
@@ -1654,15 +1657,14 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                               <div>
                                 <div className="font-bold text-txt-main flex items-center gap-2">
                                   {product.nome}
-                                  {!product.ativo && (
+                                  {isInactive && (
                                     <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-bold">
                                       INATIVO
                                     </span>
                                   )}
                                 </div>
                                 <div className="text-xs text-txt-muted flex items-center gap-2 mt-0.5">
-                                  <span>{product.codigo || 'Sem c¢digo'}</span>
-                                  <span></span>
+                                  <span>{product.codigo || 'Sem código'}</span>
                                   <span className="flex items-center gap-1">
                                     {MOVEMENT_TYPES.find(m => m.value === product.movement_type)?.label || 'Simples'}
                                   </span>
@@ -1692,6 +1694,18 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                               )}
                               {product.track_stock && (
                                 <div className="text-[10px] text-txt-muted">Controla estoque</div>
+                              )}
+                              {isInactive && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void handleReactivateProduct(product.id);
+                                  }}
+                                  className="mt-1 text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded hover:bg-emerald-500/20 transition-colors"
+                                >
+                                  Reativar
+                                </button>
                               )}
                             </div>
                           </div>
@@ -1819,7 +1833,7 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                       </div>
 
                       {/* Vínculo com Vasilhame Vazio (só aparece se EXCHANGE) */}
-                      {productForm.movement_type === 'EXCHANGE' && activeDeposits.length === 0 && (
+                      {productForm.movement_type === 'EXCHANGE' && (
                         <div>
                           <label className="block text-xs font-bold text-txt-muted uppercase tracking-wide mb-2">
                             <AlertTriangle className="w-3 h-3 inline mr-1 text-yellow-500" />
@@ -1840,57 +1854,6 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                               ⚠️ Nenhum vasilhame vazio cadastrado. Crie primeiro um produto do tipo "Vasilhame Vazio".
                             </p>
                           )}
-                        </div>
-                      )}
-
-                      {/* Preços por Modalidade (só aparecem se EXCHANGE) */}
-                      {productForm.movement_type === 'EXCHANGE' && (
-                        <div className="space-y-4 p-4 bg-purple-500/5 rounded-xl border border-purple-500/20">
-                          <p className="text-xs font-bold text-txt-muted uppercase">Preços Específicos por Modalidade</p>
-                          
-                          {/* Preço TROCA (cliente devolve casco) */}
-                          <div>
-                            <label className="block text-xs font-bold text-yellow-400 uppercase tracking-wide mb-2">
-                              <span className="inline-block w-2 h-2 bg-yellow-400 rounded-full mr-1" />
-                              Preço TROCA (Cliente devolve casco) - R$
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={productForm.preco_troca || ''}
-                              onChange={e => {
-                                const val = e.target.value.replace(',', '.');
-                                if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                  setProductForm(prev => ({ ...prev, preco_troca: val === '' ? null : parseFloat(val) || null }));
-                                }
-                              }}
-                              placeholder="0.00"
-                              className="w-full px-4 py-3 bg-app border border-bdr rounded-xl focus:ring-2 focus:ring-yellow-500/20 outline-none"
-                            />
-                            <p className="text-[10px] text-txt-muted mt-1">Preço cobrado quando cliente devolve o vasilhame vazio</p>
-                          </div>
-
-                          {/* Preço COMPLETA (cliente leva casco novo) */}
-                          <div>
-                            <label className="block text-xs font-bold text-blue-400 uppercase tracking-wide mb-2">
-                              <span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1" />
-                              Preço COMPLETA (Cliente leva casco novo) - R$
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={productForm.preco_completa || ''}
-                              onChange={e => {
-                                const val = e.target.value.replace(',', '.');
-                                if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                  setProductForm(prev => ({ ...prev, preco_completa: val === '' ? null : parseFloat(val) || null }));
-                                }
-                              }}
-                              placeholder="0.00"
-                              className="w-full px-4 py-3 bg-app border border-bdr rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none"
-                            />
-                            <p className="text-[10px] text-txt-muted mt-1">Preço cobrado quando cliente leva o vasilhame cheio (sem devolução)</p>
-                          </div>
                         </div>
                       )}
 
@@ -2826,6 +2789,8 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
 };
 
 export default DepositsStockModule;
+
+
 
 
 

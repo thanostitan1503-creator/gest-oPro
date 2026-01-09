@@ -26,14 +26,21 @@ export const updatePricingModeSupportFromRows = (rows?: any[] | null): boolean |
 export const getPricingModeSupport = async (): Promise<boolean> => {
   if (pricingModeSupported !== null) return pricingModeSupported;
   try {
-    const { data, error } = await supabase.from('product_pricing').select('*').limit(1);
-    if (error) {
-      console.warn('Nao foi possivel verificar suporte a modalidade de preco:', error);
+    const { error } = await supabase.from('product_pricing').select('mode').limit(1);
+    if (!error) {
+      pricingModeSupported = true;
+      return true;
+    }
+
+    const msg = String(error?.message ?? '').toLowerCase();
+    if (msg.includes('column') && msg.includes('mode')) {
       pricingModeSupported = false;
       return false;
     }
-    updatePricingModeSupportFromRows(data);
-    return pricingModeSupported ?? false;
+
+    console.warn('Nao foi possivel verificar suporte a modalidade de preco:', error);
+    pricingModeSupported = false;
+    return false;
   } catch (err) {
     console.warn('Nao foi possivel verificar suporte a modalidade de preco:', err);
     pricingModeSupported = false;
@@ -44,7 +51,10 @@ export const getPricingModeSupport = async (): Promise<boolean> => {
 export const ensurePricingModeMigration = async (): Promise<boolean> => {
   if (pricingModeMigrated) return pricingModeSupported ?? false;
   const supportsMode = await getPricingModeSupport();
-  if (!supportsMode) return false;
+  if (!supportsMode) {
+    pricingModeMigrated = true;
+    return false;
+  }
 
   try {
     const { error: modeError } = await supabase
@@ -115,8 +125,10 @@ export const ensurePricingModeMigration = async (): Promise<boolean> => {
       });
 
       if (inserts.length > 0) {
-        const { error: insertError } = await supabase.from('product_pricing').insert(inserts);
-        if (insertError) throw insertError;
+        const { error: upsertError } = await supabase
+          .from('product_pricing')
+          .upsert(inserts, { onConflict: 'product_id,deposit_id,mode' });
+        if (upsertError) throw upsertError;
       }
     }
   } catch (err) {

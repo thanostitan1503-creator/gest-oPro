@@ -545,8 +545,13 @@ export const deleteDeposit = async (id: string) => {
 
 // ==================== PRODUCTS ====================
 
-export const listProducts = async () => {
-  const { data, error } = await supabase.from('products').select('*').eq('is_active', true);
+export const listProducts = async (options?: { includeInactive?: boolean }) => {
+  const includeInactive = options?.includeInactive === true;
+  let query = supabase.from('products').select('*');
+  if (!includeInactive) {
+    query = query.eq('is_active', true);
+  }
+  const { data, error } = await query;
   if (error) throw error;
   return (data || []).map((p: any) => {
     const tipo = fromDbProductType(p.type ?? p.tipo ?? null);

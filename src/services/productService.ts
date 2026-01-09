@@ -127,12 +127,16 @@ const normalizeProductUpdate = (updates: any): ProductUpdate => {
 // ---------------------------------------------------------------------------
 export const productService = {
   // 1. Listar todos os produtos ativos (NUNCA clona, nunca duplica)
-  async getAll(): Promise<Product[]> {
-    const { data, error } = await supabase
+  async getAll(options?: { includeInactive?: boolean }): Promise<Product[]> {
+    const includeInactive = options?.includeInactive === true;
+    let query = supabase
       .from('products')
       .select('*')
-      .eq('is_active', true)
       .order('name');
+    if (!includeInactive) {
+      query = query.eq('is_active', true);
+    }
+    const { data, error } = await query;
     if (error) throw new Error(`Erro ao listar produtos: ${error.message}`);
     // Deduplicar por id (caso algum bug crie duplicata)
     const seen = new Set();
@@ -144,13 +148,17 @@ export const productService = {
   },
 
   // 2. Listar produtos por depósito (usando deposit_id direto)
-  async getByDeposit(depositId: string): Promise<Product[]> {
-    const { data, error } = await supabase
+  async getByDeposit(depositId: string, options?: { includeInactive?: boolean }): Promise<Product[]> {
+    const includeInactive = options?.includeInactive === true;
+    let query = supabase
       .from('products')
       .select('*')
-      .eq('is_active', true)
       .eq('deposit_id', depositId)
       .order('name');
+    if (!includeInactive) {
+      query = query.eq('is_active', true);
+    }
+    const { data, error } = await query;
 
     if (error) throw new Error(`Erro ao listar produtos do dep¢sito: ${error.message}`);
     return (data || []).map(mapProductRow);
