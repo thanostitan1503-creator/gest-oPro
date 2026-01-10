@@ -406,19 +406,20 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
       setAllProducts(rows.map(row => ({
         ...row,
         nome: row.name ?? row.nome ?? '',
-        preco_venda: row.sale_price ?? row.preco_venda ?? 0,
-        preco_troca: row.exchange_price ?? row.preco_troca ?? 0,
-        preco_completa: row.full_price ?? row.preco_completa ?? 0,
         ativo: row.is_active ?? row.ativo ?? true,
+        // Preço agora é resolvido via product_pricing
+        preco_venda: resolvePrice({ productId: row.id, depositId: row.deposit_id, mode: 'SIMPLES', rows: productPricings }),
+        preco_troca: resolvePrice({ productId: row.id, depositId: row.deposit_id, mode: 'TROCA', rows: productPricings }),
+        preco_completa: resolvePrice({ productId: row.id, depositId: row.deposit_id, mode: 'COMPLETA', rows: productPricings }),
       })) as any);
       const stockTracked = await productService.getStockTracked();
       setProducts(stockTracked.map(row => ({
         ...row,
         nome: row.name ?? row.nome ?? '',
-        preco_venda: row.sale_price ?? row.preco_venda ?? 0,
-        preco_troca: row.exchange_price ?? row.preco_troca ?? 0,
-        preco_completa: row.full_price ?? row.preco_completa ?? 0,
         ativo: row.is_active ?? row.ativo ?? true,
+        preco_venda: resolvePrice({ productId: row.id, depositId: row.deposit_id, mode: 'SIMPLES', rows: productPricings }),
+        preco_troca: resolvePrice({ productId: row.id, depositId: row.deposit_id, mode: 'TROCA', rows: productPricings }),
+        preco_completa: resolvePrice({ productId: row.id, depositId: row.deposit_id, mode: 'COMPLETA', rows: productPricings }),
       })) as any);
     } catch (err) {
       console.error('Erro ao carregar produtos do serviço:', err);
@@ -1637,13 +1638,6 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                   ) : (
                     filteredProducts.map(product => {
                       const isInactive = (product as any).is_active === false || (product as any).ativo === false;
-                      const displayPrice = getDisplayPrice(product);
-                      const trocaPrice = product.movement_type === 'EXCHANGE'
-                        ? getDisplayPriceForMode(product, 'TROCA')
-                        : displayPrice;
-                      const completaPrice = product.movement_type === 'EXCHANGE'
-                        ? getDisplayPriceForMode(product, 'COMPLETA')
-                        : displayPrice;
                       return (
                         <div
                           key={product.id}
@@ -1676,23 +1670,19 @@ export const DepositsStockModule: React.FC<DepositsStockModuleProps> = ({ onClos
                             </div>
                             <div className="text-right">
                               {product.movement_type === 'EXCHANGE' ? (
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center justify-end gap-2">
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-end">
                                     <span className="text-[10px] text-yellow-400 font-bold bg-yellow-500/10 px-1.5 py-0.5 rounded">TROCA</span>
-                                    <span className="font-bold text-green-500">
-                                      R$ {trocaPrice.toFixed(2)}
-                                    </span>
                                   </div>
-                                  <div className="flex items-center justify-end gap-2">
+                                  <div className="flex items-center justify-end">
                                     <span className="text-[10px] text-blue-400 font-bold bg-blue-500/10 px-1.5 py-0.5 rounded">COMPLETA</span>
-                                    <span className="font-bold text-blue-400">
-                                      R$ {completaPrice.toFixed(2)}
-                                    </span>
                                   </div>
                                 </div>
                               ) : (
-                                <div className="font-bold text-green-500">
-                                  R$ {displayPrice.toFixed(2)}
+                                <div className="flex items-center justify-end">
+                                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                                    {product.movement_type === 'FULL' ? 'COMPLETA' : 'SIMPLES'}
+                                  </span>
                                 </div>
                               )}
                               {product.track_stock && (

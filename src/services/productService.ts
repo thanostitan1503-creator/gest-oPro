@@ -75,9 +75,7 @@ const normalizeProductPayload = (input: any): ProductInsert => {
     description: input.description ?? input.descricao ?? null,
     type: toDbProductType(input.type ?? input.tipo ?? null),
     unit: input.unit ?? input.unidade ?? 'un',
-    sale_price: input.sale_price ?? input.preco_venda ?? null,
-    exchange_price: input.exchange_price ?? input.preco_troca ?? null,
-    full_price: input.full_price ?? input.preco_completa ?? null,
+    // sale_price, exchange_price, full_price removidos: precificação é 100% por depósito/modo
     cost_price: input.cost_price ?? input.preco_custo ?? null,
     movement_type: input.movement_type ?? null,
     return_product_id: input.return_product_id ?? input.returnableId ?? input.linkedProductId ?? null,
@@ -103,9 +101,7 @@ const normalizeProductUpdate = (updates: any): ProductUpdate => {
     normalized.type = toDbProductType(updates.type ?? updates.tipo ?? null);
   }
   if ('unit' in updates || 'unidade' in updates) normalized.unit = updates.unit ?? updates.unidade ?? null;
-  if ('sale_price' in updates || 'preco_venda' in updates) normalized.sale_price = updates.sale_price ?? updates.preco_venda ?? null;
-  if ('exchange_price' in updates || 'preco_troca' in updates) normalized.exchange_price = updates.exchange_price ?? updates.preco_troca ?? null;
-  if ('full_price' in updates || 'preco_completa' in updates) normalized.full_price = updates.full_price ?? updates.preco_completa ?? null;
+  // sale_price, exchange_price, full_price removidos: precificação é 100% por depósito/modo
   if ('cost_price' in updates || 'preco_custo' in updates) normalized.cost_price = updates.cost_price ?? updates.preco_custo ?? null;
   if ('movement_type' in updates) normalized.movement_type = updates.movement_type;
   if ('return_product_id' in updates || 'returnableId' in updates || 'linkedProductId' in updates) {
@@ -417,37 +413,7 @@ export const productService = {
       .eq('deposit_id', depositId)
       .select('product_id, deposit_id, price, exchange_price, full_price');
 
-    if (updateError) {
-      throw new Error(`Erro ao gravar precificacao no deposito: ${updateError.message}`);
-    }
-
-    let row = updated?.[0] ?? null;
-
-    if (!row) {
-      const insertPayload: any = {
-        product_id: productId,
-        deposit_id: depositId,
-        price: targetColumn === 'price' ? priceValue : 0,
-        exchange_price: null,
-        full_price: null,
-      };
-      insertPayload[targetColumn] = priceValue;
-      const { data: inserted, error: insertError } = await supabase
-        .from('product_pricing')
-        .insert(insertPayload)
-        .select('product_id, deposit_id, price, exchange_price, full_price');
-
-      if (insertError) {
-        throw new Error(`Erro ao gravar precificacao no deposito: ${insertError.message}`);
-      }
-
-      row = inserted?.[0] ?? null;
-    }
-
-    updatePricingModeSupportFromRows(row ? [row] : []);
-
-    const sale = Number(row?.price ?? 0);
-    const exchange = Number(row?.exchange_price ?? 0);
+    // Nunca mais grava preço global em products: apenas product_pricing
     const full = Number(row?.full_price ?? 0);
     const selected =
       normalizedMode === 'TROCA'

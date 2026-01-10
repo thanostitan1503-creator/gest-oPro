@@ -14,6 +14,60 @@ export type DeliveryJob = Database['public']['Tables']['delivery_jobs']['Row'];
 export type DriverPresence = Database['public']['Tables']['driver_presence']['Row'];
 
 export const deliveryService = {
+    /**
+     * Listar todas as zonas + precificação
+     */
+    async listDeliveryZones(): Promise<{ zones: Database['public']['Tables']['delivery_zones']['Row'][]; pricing: Database['public']['Tables']['zone_pricing']['Row'][] }> {
+      const { data: zones, error: zoneError } = await supabase
+        .from('delivery_zones')
+        .select('*')
+        .order('name');
+      if (zoneError) throw new Error(`Erro ao listar zonas: ${zoneError.message}`);
+
+      const { data: pricing, error: pricingError } = await supabase
+        .from('zone_pricing')
+        .select('*');
+      if (pricingError) throw new Error(`Erro ao listar precificação de zonas: ${pricingError.message}`);
+
+      return { zones: zones || [], pricing: pricing || [] };
+    },
+
+    /**
+     * Upsert de zona de entrega
+     */
+    async upsertDeliveryZone(payload: Database['public']['Tables']['delivery_zones']['Insert']): Promise<Database['public']['Tables']['delivery_zones']['Row']> {
+      const { data, error } = await supabase
+        .from('delivery_zones')
+        .upsert(payload)
+        .select()
+        .single();
+      if (error) throw new Error(`Erro ao salvar zona: ${error.message}`);
+      return data;
+    },
+
+    /**
+     * Upsert de precificação por zona
+     */
+    async upsertZonePricing(payload: Database['public']['Tables']['zone_pricing']['Insert']): Promise<Database['public']['Tables']['zone_pricing']['Row']> {
+      const { data, error } = await supabase
+        .from('zone_pricing')
+        .upsert(payload)
+        .select()
+        .single();
+      if (error) throw new Error(`Erro ao salvar precificação da zona: ${error.message}`);
+      return data;
+    },
+
+    /**
+     * Deletar zona de entrega
+     */
+    async deleteDeliveryZone(id: string): Promise<void> {
+      const { error } = await supabase
+        .from('delivery_zones')
+        .delete()
+        .eq('id', id);
+      if (error) throw new Error(`Erro ao deletar zona: ${error.message}`);
+    },
   // ==================== ZONAS E SETORES ====================
 
   /**

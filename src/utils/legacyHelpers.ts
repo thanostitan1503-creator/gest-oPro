@@ -115,7 +115,6 @@ export const db: any = {
       const { data } = await supabase.from('products').select('*');
       const mapped = (data || []).map((p: any) => {
         const tipo = fromDbProductType(p.type ?? p.tipo ?? null);
-        
         return {
           id: p.id,
           codigo: p.code || p.codigo || '',
@@ -124,10 +123,7 @@ export const db: any = {
           tipo,
           type: tipo,
           unidade: p.unit,
-          preco_venda: p.sale_price,
           preco_custo: p.cost_price,
-          preco_troca: p.exchange_price,
-          preco_completa: p.full_price,
           movement_type: p.movement_type,
           return_product_id: p.return_product_id,
           track_stock: p.track_stock,
@@ -149,9 +145,7 @@ export const db: any = {
     get: async (id: string) => {
       const { data } = await supabase.from('products').select('*').eq('id', id).single();
       if (!data) return null;
-
       const tipo = fromDbProductType(data.type ?? data.tipo ?? null);
-      
       return {
         id: data.id,
         codigo: data.code || data.codigo || '',
@@ -160,10 +154,7 @@ export const db: any = {
         tipo,
         type: tipo,
         unidade: data.unit,
-        preco_venda: data.sale_price,
         preco_custo: data.cost_price,
-        preco_troca: data.exchange_price,
-        preco_completa: data.full_price,
         movement_type: data.movement_type,
         return_product_id: data.return_product_id,
         track_stock: data.track_stock,
@@ -176,7 +167,6 @@ export const db: any = {
     },
     put: async (product: any) => {
       const type = toDbProductType(product.tipo ?? product.type ?? null);
-      
       const dbProduct = {
         id: product.id,
         code: product.codigo || product.code,
@@ -184,10 +174,7 @@ export const db: any = {
         description: product.descricao || product.description,
         type,
         unit: product.unidade || product.unit,
-        sale_price: product.preco_venda ?? product.sale_price,
         cost_price: product.preco_custo ?? product.cost_price,
-        exchange_price: product.preco_troca ?? product.exchange_price,
-        full_price: product.preco_completa ?? product.full_price,
         movement_type: product.movement_type,
         return_product_id: product.return_product_id,
         track_stock: product.track_stock,
@@ -206,22 +193,14 @@ export const db: any = {
       if ('code' in updates) dbUpdates.code = updates.code;
       if ('nome' in updates) dbUpdates.name = updates.nome;
       if ('name' in updates) dbUpdates.name = updates.name;
-      
       if ('tipo' in updates) {
         dbUpdates.type = toDbProductType(updates.tipo);
       }
       if ('type' in updates) dbUpdates.type = toDbProductType(updates.type);
-      
       if ('unidade' in updates) dbUpdates.unit = updates.unidade;
       if ('unit' in updates) dbUpdates.unit = updates.unit;
-      if ('preco_venda' in updates) dbUpdates.sale_price = updates.preco_venda;
-      if ('sale_price' in updates) dbUpdates.sale_price = updates.sale_price;
       if ('preco_custo' in updates) dbUpdates.cost_price = updates.preco_custo;
       if ('cost_price' in updates) dbUpdates.cost_price = updates.cost_price;
-      if ('preco_troca' in updates) dbUpdates.exchange_price = updates.preco_troca;
-      if ('exchange_price' in updates) dbUpdates.exchange_price = updates.exchange_price;
-      if ('preco_completa' in updates) dbUpdates.full_price = updates.preco_completa;
-      if ('full_price' in updates) dbUpdates.full_price = updates.full_price;
       if ('ativo' in updates) dbUpdates.is_active = updates.ativo;
       if ('is_active' in updates) dbUpdates.is_active = updates.is_active;
       if ('depositoId' in updates) dbUpdates.deposit_id = updates.depositoId;
@@ -231,7 +210,6 @@ export const db: any = {
       if ('track_stock' in updates) dbUpdates.track_stock = updates.track_stock;
       if ('product_group' in updates) dbUpdates.product_group = updates.product_group;
       if ('image_url' in updates) dbUpdates.image_url = updates.image_url;
-      
       const { error } = await supabase.from('products').update(dbUpdates).eq('id', id);
       if (error) throw error;
     },

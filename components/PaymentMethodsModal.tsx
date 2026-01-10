@@ -3,6 +3,7 @@ import { PaymentMethod, PaymentMethodDepositConfig } from '@/types';
 import { Deposit } from '@/domain/types';
 import { createPaymentMethod, updatePaymentMethod, upsertDepositConfig } from '@/services';
 import { X } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface PaymentMethodsModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ interface PaymentMethodsModalProps {
 type DepositConfigDraft = {
   deposit_id: string;
   is_active: boolean;
-  due_days: number;
+  due_days: string;
 };
 
 export function PaymentMethodsModal({
@@ -54,7 +55,7 @@ export function PaymentMethodsModal({
       return {
         deposit_id: deposit.id,
         is_active: existing?.is_active ?? true,
-        due_days: existing?.due_days ?? 0,
+        due_days: String(existing?.due_days ?? 0),
       };
     });
 
@@ -84,22 +85,24 @@ export function PaymentMethodsModal({
 
   const handleSave = async () => {
     if (!canSave) {
-      alert('Preencha o nome e selecione um tipo.');
+      toast.error('Preencha o nome e selecione um tipo.');
       return;
     }
 
     const effectiveGeneratesReceivable = isImmediateType ? false : generatesReceivable;
     const normalizedConfigs = depositConfigs.map((config) => ({
       ...config,
-      due_days: Number(config.due_days) || 0,
+      due_days: config.due_days === '' ? Number.NaN : Number(config.due_days),
     }));
 
     if (receiptType === 'DEFERRED') {
       const invalid = normalizedConfigs.filter(
-        (config) => config.is_active && config.due_days <= 0
+        (config) =>
+          config.is_active &&
+          (!Number.isInteger(config.due_days) || config.due_days <= 0)
       );
       if (invalid.length > 0) {
-        alert('Defina um prazo em dias maior que zero para depositos ativos.');
+        toast.error('Informe um prazo em dias maior que zero para pagamentos a prazo.');
         return;
       }
     }
@@ -149,7 +152,7 @@ export function PaymentMethodsModal({
       onClose();
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar forma de pagamento.');
+      toast.error('Erro ao salvar forma de pagamento.');
     } finally {
       setSaving(false);
     }
@@ -248,7 +251,7 @@ export function PaymentMethodsModal({
                 const config = depositConfigs.find((item) => item.deposit_id === deposit.id) || {
                   deposit_id: deposit.id,
                   is_active: true,
-                  due_days: 0,
+                  due_days: '0',
                 };
                 const disableDueDays = isImmediateType || !config.is_active;
 
@@ -274,7 +277,12 @@ export function PaymentMethodsModal({
                           min={1}
                           className="w-full bg-app border border-bdr rounded-lg px-3 py-2 text-sm font-bold text-txt-main focus:ring-2 focus:ring-emerald-500 outline-none"
                           value={config.due_days}
-                          onChange={(e) => updateDepositConfig(deposit.id, { due_days: Number(e.target.value) || 0 })}
+                          onChange={(e) => {
+                            const nextValue = e.target.value;
+                            if (nextValue === '' || /^\d*$/.test(nextValue)) {
+                              updateDepositConfig(deposit.id, { due_days: nextValue });
+                            }
+                          }}
                           disabled={disableDueDays}
                         />
                       </div>

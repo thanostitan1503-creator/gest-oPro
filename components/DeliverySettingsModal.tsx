@@ -4,13 +4,10 @@ import L from 'leaflet';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import 'leaflet.heat';
 import { X, Truck, Plus, Trash2, Map as MapIcon, Palette } from 'lucide-react';
-// ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { FeatureGroup, MapContainer, Pane, Polygon, TileLayer, Tooltip, useMap } from 'react-leaflet';
 import { depositService } from '@/services';
-// ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
-import { supabase } from '@/domain/supabaseClient';
-import { Deposito, DeliverySector, DeliveryZone } from '@/domain/types';
-// ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
+import { deliveryService } from '@/services/deliveryService';
+import type { Database } from '@/types/supabase';
 
 interface DeliverySettingsModalProps {
   onClose: () => void;
@@ -520,40 +517,33 @@ const MapRefSetter: React.FC<{ mapRef: React.MutableRefObject<L.Map | null> }> =
 
 // ⚠️ REMOVIDO: Sem depósito automático. Usuário deve sempre selecionar manualmente.
 
-// Stub temporário para db
-const db: any = { 
-  delivery_zones: { bulkDelete: async () => {}, toArray: async () => [] },
-  zone_pricing: { bulkDelete: async () => {}, toArray: async () => [] },
-  delivery_sectors: { bulkDelete: async () => {}, toArray: async () => [] },
-  deposits: { bulkAdd: async () => {}, toArray: async () => [] },
-  service_orders: { toArray: async () => [] },
-};
-
-// Stub temporário para useLiveQuery
-const useLiveQuery = (fn: any, deps: any) => {
-  const [data, setData] = useState<any>(undefined);
-  useEffect(() => {
-    fn().then((result: any) => setData(result || [])).catch(() => setData([]));
-  }, deps);
-  return data;
-};
 
 export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ onClose }) => {
-  const zonesRaw = useLiveQuery(() => db.delivery_zones?.toArray(), []);
-  const sectorsRaw = useLiveQuery(() => db.delivery_zones?.toArray(), []);
-  const depositsRaw = useLiveQuery(() => db.deposits?.toArray(), []);
-  const [depositsOnline, setDepositsOnline] = useState<Deposito[]>([]);
-  const zonePricingRaw = useLiveQuery(() => db.zone_pricing?.toArray(), []);
 
-  const zones = zonesRaw ?? [];
-  const sectors = sectorsRaw ?? [];
-  const deposits = (depositsOnline.length ? depositsOnline : depositsRaw) ?? [];
-  const zonePricing = zonePricingRaw ?? [];
-  const loading =
-    zonesRaw === undefined ||
-    sectorsRaw === undefined ||
-    depositsRaw === undefined ||
-    zonePricingRaw === undefined;
+  const [zones, setZones] = useState<Database['public']['Tables']['delivery_zones']['Row'][]>([]);
+  const [zonePricing, setZonePricing] = useState<Database['public']['Tables']['zone_pricing']['Row'][]>([]);
+  const [depositsOnline, setDepositsOnline] = useState<Deposito[]>([]);
+  const [loading, setLoading] = useState(false);
+  // Carregar zonas e precificação do Supabase via service
+  useEffect(() => {
+    let cancelled = false;
+    if (!isOpen) return;
+    (async () => {
+      try {
+        setLoading(true);
+        const { zones: loadedZones, pricing: loadedPricing } = await deliveryService.listDeliveryZones();
+        if (cancelled) return;
+        setZones(loadedZones);
+        setZonePricing(loadedPricing);
+      } catch (error) {
+        console.error('Erro ao carregar zonas de entrega', error);
+        toast.error('Erro ao carregar zonas de entrega.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen]);
 
   const [settingsMode, setSettingsMode] = useState<'map' | 'pricing'>('map');
   const [selectedDepositId, setSelectedDepositId] = useState<string>(''); // ⚠️ VAZIO: Usuário seleciona manualmente
@@ -616,7 +606,7 @@ export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ on
     let mounted = true;
     (async () => {
       try {
-        await import('leaflet-draw');
+        await import('leaflet-draw/dist/leaflet.draw.js');
         // Garantir que plugins registrem Event
         const hasDraw = !!(L as any)?.Draw?.Event;
         if (!mounted) return;
@@ -954,119 +944,87 @@ export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ on
 
   const handleSaveFreeShipping = async () => {
     const current = deposits.find((d) => d.id === selectedDepositId);
-    if (!current) return;
-    const value = Number(freeShippingValue || 0) || 0;
-    const updated: Deposito = {
-      ...current,
-      free_shipping_min_value: value,
-    };
-    await upsertDeposit(updated);
+    if (!current) {
+      toast.error('Selecione um deposito para salvar o frete gratis.');
+      return;
+    }
+    const value = Number(String(freeShippingValue).replace(',', '.')) || 0;
+    try {
+      await depositService.update(current.id, { free_shipping_min_value: value });
+      setDepositsOnline((prev) => {
+        if (!prev.length) {
+          return [{ ...current, free_shipping_min_value: value }];
+        }
+        return prev.map((dep) =>
+          dep.id === current.id ? { ...dep, free_shipping_min_value: value } : dep
+        );
+      });
+      toast.success('Frete gratis atualizado com sucesso.');
+    } catch (error) {
+      console.error('Erro ao salvar frete gratis:', error);
+      toast.error('Erro ao salvar frete gratis.');
+    }
   };
 
   const handleSaveZone = async () => {
-    if (!name) return toast.error("Nome da zona é obrigatório");
-    
-    // ⚠️ Validar que o usuário desenhou um polígono
+    if (!name) return toast.error('Nome da zona é obrigatório');
     const polygonToSave = newZonePolygon || zonePolygon;
     if (!polygonToSave) {
-      return toast.error("Desenhe a área da zona no mapa antes de salvar");
+      return toast.error('Desenhe a área da zona no mapa antes de salvar');
     }
-    
     setSaving(true);
     try {
-      // 1. PREPARAR PAYLOAD DA ZONA
-      const zoneId = zoneData.id || crypto.randomUUID();
-      const zonePayload: DeliveryZone = {
+      // 1. Montar payload da zona
+      const zoneId = zoneData?.id ?? crypto.randomUUID();
+      const zonePayload: Database['public']['Tables']['delivery_zones']['Insert'] = {
         id: zoneId,
         name,
-        color,
-        depositoId: null, // ✅ CRÍTICO: Zonas são GLOBAIS (depositoId = null)
+        color: color || null,
+        is_active: true,
+        // Adicione outros campos obrigatórios se existirem
+        // polygon: polygonToSave, // Se o campo correto for map_polygon, ajuste aqui
         map_polygon: polygonToSave,
       };
 
-      // 2. PREPARAR PRICING (se houver depósito selecionado)
-      let pricingPayload = null;
-      if (selectedDepositId) {
-        const isCreatingNew = !zoneData.id;
-        const taxaAtual = isCreatingNew 
-          ? String(zoneFormFee || '').replace(',', '.').trim()
-          : String(pricingDrafts[zoneId] ?? '').replace(',', '.').trim();
-        const priceValue = Number(taxaAtual) || 0;
+      // 2. Upsert da zona via service
+      const savedZone = await deliveryService.upsertDeliveryZone(zonePayload);
 
-        if (priceValue > 0) {
-          pricingPayload = {
-            id: `${selectedDepositId}:${zoneId}`,
-            zone_id: zoneId,
-            depositoId: selectedDepositId, // ✅ camelCase
-            price: priceValue,
-          };
-        }
+      // 3. Se existir preço por depósito selecionado, montar payload e chamar upsertZonePricing
+      let pricingPayload: Database['public']['Tables']['zone_pricing']['Insert'] | null = null;
+      if (selectedDepositId && zoneFormFee != null && !Number.isNaN(Number(zoneFormFee))) {
+        pricingPayload = {
+          id: `${selectedDepositId}:${zoneId}`,
+          zone_id: savedZone.id,
+          deposit_id: selectedDepositId,
+          price: Number(zoneFormFee),
+        };
+        await deliveryService.upsertZonePricing(pricingPayload);
       }
 
-      // 3. ✅ SALVAR TUDO EM UMA ÚNICA TRANSAÇÃO ATÔMICA
-      await db.transaction('rw', db.delivery_zones, db.zone_pricing, db.outbox_events, async () => {
-        // 3.1. Salvar zona
-        await db.delivery_zones.put(zonePayload);
-        await db.outbox_events.put({
-          id: crypto.randomUUID(),
-          entity: 'delivery_zones',
-          action: 'UPSERT',
-          entity_id: zonePayload.id,
-          payload_json: zonePayload,
-          status: 'PENDING',
-          tries: 0,
-          created_at: new Date().toISOString(),
-        });
-
-        // 3.2. Salvar pricing (se existir)
-        if (pricingPayload) {
-          await db.zone_pricing.put(pricingPayload);
-          await db.outbox_events.put({
-            id: crypto.randomUUID(),
-            entity: 'zone_pricing',
-            action: 'UPSERT',
-            entity_id: pricingPayload.id,
-            payload_json: pricingPayload,
-            status: 'PENDING',
-            tries: 0,
-            created_at: new Date().toISOString(),
-          });
-        }
+      // 4. Atualizar estado local de zonas e precificação
+      setZones((prev) => {
+        const exists = prev.some((z) => z.id === savedZone.id);
+        if (!exists) return [...prev, savedZone];
+        return prev.map((z) => (z.id === savedZone.id ? savedZone : z));
       });
 
-      console.log('✅ Zona e pricing salvos no Dexie:', zoneId);
-      
-      // 📦 VALIDAÇÃO: Verificar objeto limpo (apenas depositoId)
       if (pricingPayload) {
-        console.log('📦 Pricing Object (deve ter apenas depositoId):', pricingPayload);
-        const hasLegacyFields = 'deposit_id' in pricingPayload || 'deposito_id' in pricingPayload;
-        if (hasLegacyFields) {
-          console.error('❌ CONTAMINAÇÃO: Objeto contém campos legados!', pricingPayload);
-        }
+        setZonePricing((prev) => {
+          const exists = prev.some((p) => p.id === pricingPayload!.id);
+          if (!exists) return [...prev, pricingPayload!];
+          return prev.map((p) => (p.id === pricingPayload!.id ? pricingPayload! : p));
+        });
       }
 
-      // 4. FEEDBACK E LIMPEZA
-      if (pricingPayload) {
-        toast.success(`Zona "${name}" e taxa R$ ${pricingPayload.price.toFixed(2)} salvas!`);
-      } else if (selectedDepositId) {
-        toast.success(`Zona "${name}" salva! Configure a taxa depois.`);
-      } else {
-        toast.success(`Zona "${name}" salva! Atribua taxa via 'Precificação por zona'.`);
-      }
-      
-      // Limpar formulário
-      setZoneForm({ name: '', color: '#f97316' });
-      setZoneFormFee('');
-      setIsCreatingZone(false);
-      setNewZonePolygon(null);
+      setZoneData(savedZone);
+      setZonePolygon(polygonToSave);
       setPolygonDirty(false);
-      if (drawnItemsRef.current) {
-        drawnItemsRef.current.clearLayers();
-      }
+      setDirty(false);
 
+      toast.success('Zona salva com sucesso.');
     } catch (error: any) {
-      console.error("❌ Erro ao salvar zona:", error);
-      toast.error(`Falha ao salvar: ${error.message || 'Erro desconhecido'}`);
+      console.error('Erro ao salvar zona:', error);
+      toast.error('Erro ao salvar zona.');
     } finally {
       setSaving(false);
     }
@@ -1074,10 +1032,18 @@ export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ on
 
   const handleDeleteZone = async (zoneId: string) => {
     if (!confirm('Excluir esta zona?')) return;
-    await deleteDeliveryZone(zoneId);
-    if (selectedZoneId === zoneId) {
-      const next = zones.find((z) => z.id !== zoneId);
-      setSelectedZoneId(next?.id || '');
+    try {
+      await deliveryService.deleteDeliveryZone(zoneId);
+      setZones((prev) => prev.filter((z) => z.id !== zoneId));
+      setZonePricing((prev) => prev.filter((p) => p.zone_id !== zoneId));
+      if (selectedZoneId === zoneId) {
+        const next = zones.find((z) => z.id !== zoneId);
+        setSelectedZoneId(next?.id || '');
+      }
+      toast.success('Zona excluída com sucesso.');
+    } catch (error) {
+      console.error('Erro ao excluir zona:', error);
+      toast.error('Erro ao excluir zona.');
     }
   };
 
@@ -1675,6 +1641,4 @@ export const DeliverySettingsModal: React.FC<DeliverySettingsModalProps> = ({ on
     </div>
   );
 };
-
-
 
