@@ -19,12 +19,20 @@ import { getOrders } from '@/utils/legacyHelpers';
 import { supabase } from '@/utils/supabaseClient';
 import { normalizeDateForSupabase } from '@/utils/date';
 import {
+  clientService,
+  loadClientSpecialPrices,
   productService,
   depositService,
   employeeService,
+  serviceOrderService,
   financialService,
   listPaymentMethods,
   listPaymentMethodDepositConfigs,
+  type ClientSpecialPriceMap,
+  type CompleteServiceOrder,
+  type NewServiceOrder as ServiceOrderInsert,
+  type NewServiceOrderItem,
+  type NewServiceOrderPayment,
 } from '@/services';
 import type { Deposit as DepositRow } from '@/services/depositService';
 
@@ -74,6 +82,26 @@ const normalizeMethodKind = (value?: string | null): PaymentMethod['method_kind'
   return 'OTHER';
 };
 
+const buildFullAddress = (
+  street?: string | null,
+  neighborhood?: string | null,
+  fallback?: string | null
+) => {
+  const parts = [street?.trim(), neighborhood?.trim()].filter(Boolean);
+  if (parts.length > 0) return parts.join(' - ');
+  return (fallback ?? '').trim();
+};
+
+const getClientAddress = (client?: Partial<Cliente> | null) => {
+  if (!client) return '';
+  const street = client.streetAddress ?? '';
+  const neighborhood = client.neighborhood ?? '';
+  if (street.trim() || neighborhood.trim()) {
+    return buildFullAddress(street, neighborhood, '');
+  }
+  return (client.endereco ?? '').trim();
+};
+
 
 const listEmployees = async (): Promise<Colaborador[]> => {
   const { data, error } = await supabase.from('employees').select('*').eq('is_active', true);
@@ -99,35 +127,55 @@ const getEmployees = (): Colaborador[] => {
 };
 
 const listClients = async (): Promise<Cliente[]> => {
-  const { data, error } = await supabase.from('clients').select('*').eq('is_active', true);
-  if (error) throw error;
-  return (data || []).map((c: any) => ({
-    id: c.id,
-    nome: c.name,
-    endereco: c.address,
-    telefone: c.phone,
-    cpf: c.cpf,
-    referencia: c.reference,
-    dataNascimento: c.birth_date,
-    deliveryZoneId: c.delivery_zone_id,
-    ativo: c.is_active,
-  }));
+  const data = await clientService.getAll();
+  return (data || []).map((c) => {
+    const endereco = buildFullAddress(c.street_address, c.neighborhood, c.address);
+    return {
+      id: c.id,
+      nome: c.name,
+      endereco,
+      streetAddress: c.street_address ?? c.address ?? '',
+      neighborhood: c.neighborhood ?? '',
+      deliverySectorId: c.delivery_sector_id ?? null,
+      telefone: c.phone ?? undefined,
+      cpf: c.cpf ?? undefined,
+      referencia: c.reference ?? undefined,
+      dataNascimento: c.birth_date ?? undefined,
+      deliveryZoneId: c.delivery_zone_id ?? null,
+      ativo: c.is_active ?? c.active ?? true,
+    };
+  });
 };
 
 const upsertClient = async (client: Partial<Cliente>) => {
-  const dbClient: any = {
-    id: client.id,
-    name: client.nome,
-    address: client.endereco,
-    phone: client.telefone,
-    cpf: client.cpf,
-      reference: client.referencia,
-      birth_date: normalizeDateForSupabase(client.dataNascimento),
-    delivery_zone_id: client.deliveryZoneId,
+  const nowIso = new Date().toISOString();
+  const birth = normalizeDateForSupabase(client.dataNascimento);
+  const endereco = buildFullAddress(client.streetAddress, client.neighborhood, client.endereco);
+
+  const basePayload = {
+    name: client.nome || '',
+    address: endereco || null,
+    street_address: client.streetAddress?.trim() || null,
+    neighborhood: client.neighborhood?.trim() || null,
+    delivery_sector_id: client.deliverySectorId ?? null,
+    phone: client.telefone || null,
+    cpf: client.cpf || null,
+    reference: client.referencia || null,
+    birth_date: birth,
+    delivery_zone_id: client.deliveryZoneId ?? null,
     is_active: client.ativo ?? true,
+    updated_at: nowIso,
   };
-  const { error } = await supabase.from('clients').upsert(dbClient);
-  if (error) throw error;
+
+  if (client.id) {
+    await clientService.update(client.id, basePayload);
+    return;
+  }
+
+  await clientService.create({
+    ...basePayload,
+    created_at: nowIso,
+  });
 };
 
 const createProduct = async (product: any): Promise<Produto> => {
@@ -168,17 +216,28 @@ const updateProduct = async (id: string, updates: any): Promise<Produto> => {
   return mapProductRowToProduto(data);
 };
 
-const upsertServiceOrder = async (order: any) => {
-  const { error } = await supabase.from('service_orders').upsert(order);
-  if (error) throw error;
+const upsertServiceOrder = async (
+  order: ServiceOrderInsert,
+  items: NewServiceOrderItem[],
+  payments: NewServiceOrderPayment[]
+) => {
+  await serviceOrderService.upsertWithDetails({ order, items, payments });
 };
 
-const updateServiceOrderStatus = async (id: string, status: string, reason?: string, user?: string) => {
-  const { error } = await supabase.from('service_orders').update({ 
-    status, 
-    updated_at: new Date().toISOString() 
-  }).eq('id', id);
-  if (error) throw error;
+const updateServiceOrderStatus = async (
+  id: string,
+  status: StatusOS,
+  reason?: string
+) => {
+  if (status === 'CONCLUIDA') {
+    await serviceOrderService.complete(id);
+    return;
+  }
+  if (status === 'CANCELADA') {
+    await serviceOrderService.cancel(id, reason ?? 'Cancelamento manual');
+    return;
+  }
+  await serviceOrderService.updateStatus(id, status);
 };
 
 const normalizeDepositId = (value: any) => {
@@ -210,6 +269,41 @@ const mapProductRowToProduto = (p: any): Produto => ({
   depositoId: p.deposit_id,
   product_group: p.product_group,
   image_url: p.image_url,
+});
+
+const mapCompleteServiceOrderToDomain = (order: CompleteServiceOrder): OrdemServico => ({
+  id: order.id,
+  numeroOs: order.order_number,
+  depositoId: order.deposit_id,
+  clienteId: order.client_id ?? '',
+  clienteNome: order.client_name ?? '',
+  clienteTelefone: order.client_phone ?? undefined,
+  enderecoEntrega: order.delivery_address ?? '',
+  tipoAtendimento: (order.service_type as any) ?? 'DELIVERY',
+  status: (order.status as StatusOS) ?? 'PENDENTE',
+  statusEntrega: order.delivery_status ?? undefined,
+  entregadorId: order.driver_id ?? null,
+  observacoes: '',
+  itens: (order.items || []).map((item) => ({
+    id: item.id,
+    produtoId: item.product_id,
+    quantidade: item.quantity,
+    precoUnitario: item.unit_price,
+    modalidade: item.modality ?? 'VENDA',
+    sale_movement_type: item.sale_movement_type ?? null,
+  })),
+  pagamentos: (order.payments || []).map((payment) => ({
+    payment_method_id: payment.payment_method_id,
+    payment_method_name: payment.payment_method_name ?? null,
+    machine_id: payment.machine_id ?? null,
+    machine_name: payment.machine_name ?? null,
+    amount: payment.amount,
+  })) as any,
+  total: order.total ?? 0,
+  delivery_fee: order.delivery_fee ?? 0,
+  dataHoraCriacao: order.created_at ? new Date(order.created_at).getTime() : Date.now(),
+  dataHoraConclusao: order.completed_at ? new Date(order.completed_at).getTime() : undefined,
+  historico: [],
 });
 
 const fetchDeliveryFeeProduct = async (): Promise<Produto | null> => {
@@ -483,6 +577,8 @@ interface OrderItem {
   tipo: string;
   /** Modo de venda escolhido: EXCHANGE (troca) ou FULL (completa) */
   sale_movement_type?: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null;
+  priceSource?: 'AUTO' | 'CLIENT_SPECIAL' | 'MANUAL';
+  isManualPrice?: boolean;
 }
 
 interface PaymentItem {
@@ -715,6 +811,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Cliente | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [clientSpecialPrices, setClientSpecialPrices] = useState<ClientSpecialPriceMap>({});
   
   // -- State: Cart --
   const [items, setItems] = useState<OrderItem[]>([]);
@@ -738,10 +835,10 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     if ((!depositId || depositId === '') && availableDeposits.length === 1) {
       setDepositId(availableDeposits[0].id);
     }
-    if ((!employeeId || employeeId === '') && availableDrivers.length === 1) {
+    if (serviceType === 'DELIVERY' && (!employeeId || employeeId === '') && availableDrivers.length === 1) {
       setEmployeeId(availableDrivers[0].id);
     }
-  }, [availableDeposits, availableDrivers, depositId, employeeId]);
+  }, [availableDeposits, availableDrivers, depositId, employeeId, serviceType]);
 
   const pricingByZoneId = useMemo(() => {
     const map = new Map<string, any>();
@@ -800,7 +897,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
 
   const addressMatchesProfile = useMemo(() => {
     if (!selectedClient) return null;
-    const profileAddress = normalizeText(selectedClient.endereco || '');
+    const profileAddress = normalizeText(getClientAddress(selectedClient));
     const currentAddress = normalizeText(deliveryAddress || '');
     if (!profileAddress && !currentAddress) return null;
     return profileAddress === currentAddress;
@@ -828,7 +925,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
           atualizado_em: 0,
         };
       setSelectedClient(resolvedClient as Cliente);
-      setDeliveryAddress(initialData.enderecoEntrega || resolvedClient.endereco || '');
+      setDeliveryAddress(initialData.enderecoEntrega || getClientAddress(resolvedClient) || '');
       setZoneTouched(false);
       const clientZoneId =
         (resolvedClient as any).deliveryZoneId ??
@@ -845,7 +942,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       }
 
       // Map Items
-      const loadedItems: OrderItem[] = initialData.itens.map(i => {
+      const loadedItems: OrderItem[] = (initialData.itens ?? []).map(i => {
         const prod = products.find(p => p.id === i.produtoId);
         const isFeeItem =
           (deliveryFeeProductId && i.produtoId === deliveryFeeProductId) ||
@@ -858,12 +955,14 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
           precoUnitario: i.precoUnitario,
           tipo: prod && isServiceProduct(prod) ? 'SERVICO' : prod?.tipo || 'OUTRO',
           sale_movement_type: (i as any).sale_movement_type ?? null, // Preservar modo de venda
+          priceSource: 'AUTO',
+          isManualPrice: false,
         };
       });
       setItems(loadedItems);
 
       // Map Payments
-      const loadedPayments: PaymentItem[] = initialData.pagamentos.map((p, idx) => {
+      const loadedPayments: PaymentItem[] = (initialData.pagamentos ?? []).map((p, idx) => {
         const method = paymentMethodsDB.find(m => m.id === (p as any).payment_method_id || (p as any).formaPagamentoId);
         return {
           id: `pay-${idx}`,
@@ -1032,6 +1131,8 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
             quantidade: 1,
             precoUnitario: appliedDeliveryFee,
             tipo: 'OUTROS',
+            priceSource: 'AUTO',
+            isManualPrice: false,
           },
         ];
       }
@@ -1076,7 +1177,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     setClientSearch('');
     setShowSuggestions(false);
     setDeliveryFeeManualOverride(false);
-    setDeliveryAddress(client.endereco || '');
+    setDeliveryAddress(getClientAddress(client) || '');
     setZoneTouched(false);
     const clientZoneId =
       (client as any).deliveryZoneId ??
@@ -1093,6 +1194,33 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
     }
     console.log('Client selected:', client);
   };
+
+  useEffect(() => {
+    let alive = true;
+    if (!selectedClient) {
+      setClientSpecialPrices({});
+      return () => {
+        alive = false;
+      };
+    }
+
+    (async () => {
+      try {
+        const map = await loadClientSpecialPrices(selectedClient.id);
+        if (!alive) return;
+        setClientSpecialPrices(map);
+      } catch (err) {
+        console.error('Erro ao carregar precos especiais do cliente:', err);
+        if (!alive) return;
+        setClientSpecialPrices({});
+        toast.error('Nao foi possivel carregar precos especiais do cliente.');
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [selectedClient?.id]);
 
   const handleCustomerSearch = () => {
     setShowSuggestions(true);
@@ -1156,7 +1284,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   const generateReceiptPreview = () => {
     const now = new Date().toLocaleString('pt-BR');
     const clienteNome = selectedClient?.nome || 'Nao informado';
-    const clienteEndereco = deliveryAddress.trim() || selectedClient?.endereco || 'Nao informado';
+    const clienteEndereco = deliveryAddress.trim() || getClientAddress(selectedClient) || 'Nao informado';
     const clienteTelefone = selectedClient?.telefone || 'Nao informado';
     const subtotal = itemsSubtotal;
     const entrega = appliedDeliveryFee;
@@ -1210,31 +1338,41 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
   const handleSaveNewClient = (clientData: any) => {
     (async () => {
       const now = Date.now();
-      const created = await upsertClient({
-        nome: clientData.nome,
-        endereco: clientData.endereco,
-        referencia: clientData.referencia,
+      const streetAddress = (
+        clientData.streetAddress ??
+        clientData.street_address ??
+        clientData.endereco ??
+        clientData.address ??
+        ''
+      ).trim();
+      const neighborhood = (clientData.neighborhood ?? '').trim();
+      const deliverySectorId = clientData.deliverySectorId ?? clientData.delivery_sector_id ?? null;
+      const endereco = buildFullAddress(
+        streetAddress,
+        neighborhood,
+        clientData.endereco ?? clientData.address ?? ''
+      );
+      const nome = clientData.nome ?? clientData.name ?? '';
+      await upsertClient({
+        nome,
+        endereco,
+        streetAddress,
+        neighborhood,
+        deliverySectorId,
+        referencia: clientData.referencia ?? clientData.reference ?? '',
         cpf: clientData.cpf,
-        telefone: clientData.telefone,
+        telefone: clientData.telefone ?? clientData.phone ?? '',
         dataNascimento: clientData.dataNascimento,
-        deliveryZoneId: clientData.deliveryZoneId ?? null,
+        deliveryZoneId: clientData.deliveryZoneId ?? clientData.delivery_zone_id ?? null,
         ativo: true,
         criado_em: now,
         atualizado_em: now,
       } as any);
       const refreshed = await listClients();
       setDbClients(refreshed);
-      // Ensure we pass a full client object to handleSelectClient
-      let selected: Cliente | undefined;
-      if (typeof created === 'string') {
-        selected = refreshed.find(c => c.id === created);
-      } else if (created && (created as any).id) {
-        selected = refreshed.find(c => c.id === (created as any).id) || (created as Cliente);
-      }
-      // Fallback: try to match by name + cpf
-      if (!selected) {
-        selected = refreshed.find(c => c.nome === clientData.nome && (c.cpf === clientData.cpf || !clientData.cpf));
-      }
+      const selected = refreshed.find(
+        c => c.nome === nome && (c.cpf === clientData.cpf || !clientData.cpf)
+      );
       if (selected) handleSelectClient(selected);
     })();
   };
@@ -1279,7 +1417,9 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       quantidade: 1,
       precoUnitario: precoFinal,
       tipo: prod.tipo,
-      sale_movement_type: saleMode
+      sale_movement_type: saleMode,
+      priceSource: 'AUTO',
+      isManualPrice: false,
     };
     setItems([...items, newItem]);
   };
@@ -1483,6 +1623,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       return;
     }
 
+    try {
     const orderItems: ItemOrdemServico[] = items.map(i => {
       const isFeeItem =
         (deliveryFeeProductId && i.produtoId === deliveryFeeProductId) ||
@@ -1518,7 +1659,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       clienteId: selectedClient.id,
       clienteNome: selectedClient.nome,
       clienteTelefone: selectedClient.telefone,
-      enderecoEntrega: deliveryAddress.trim() || selectedClient.endereco,
+      enderecoEntrega: deliveryAddress.trim() || getClientAddress(selectedClient),
       // Em app real pegaria geocode aqui
       status: finalStatus,
       tipoAtendimento: serviceType,
@@ -1541,10 +1682,48 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       detalhe: initialData ? 'Alterou dados da O.S.' : `Nova O.S. tipo ${serviceType}`
     };
 
-    // 1. Save OS (Dexie + Outbox)
+    const createdAtIso = new Date(orderData.dataHoraCriacao || Date.now()).toISOString();
+    const updatedAtIso = new Date().toISOString();
+    const orderPayload: ServiceOrderInsert = {
+      id: orderData.id,
+      order_number: orderData.numeroOs,
+      deposit_id: effectiveDepositId,
+      client_id: selectedClient.id,
+      client_name: selectedClient.nome ?? null,
+      client_phone: selectedClient.telefone ?? null,
+      delivery_address: orderData.enderecoEntrega ?? null,
+      service_type: serviceType,
+      status: finalStatus,
+      subtotal: itemsSubtotal,
+      total: totalOrder,
+      delivery_fee: appliedDeliveryFee,
+      driver_id: employeeId || null,
+      delivery_zone_id: zoneId || null,
+      delivery_sector_id: selectedClient.deliverySectorId ?? null,
+      created_at: createdAtIso,
+      updated_at: updatedAtIso,
+    };
+
+    const itemsPayload: NewServiceOrderItem[] = orderItems.map((item) => ({
+      order_id: orderData.id,
+      product_id: item.produtoId,
+      quantity: item.quantidade,
+      unit_price: item.precoUnitario,
+      modality: item.modalidade ?? 'VENDA',
+      sale_movement_type: item.sale_movement_type ?? null,
+    }));
+
+    const paymentsPayload: NewServiceOrderPayment[] = payments.map((payment) => ({
+      order_id: orderData.id,
+      payment_method_id: payment.methodId ?? null,
+      payment_method_name: payment.methodName ?? null,
+      amount: payment.value,
+    }));
+
+    // 1. Save OS
     const historico = [...(orderData.historico || [])];
     historico.unshift(logEntry);
-    await upsertServiceOrder({ ...orderData, historico });
+    await upsertServiceOrder(orderPayload, itemsPayload, paymentsPayload);
 
     if (!initialData?.id) {
       const receivableCandidates = payments.filter((payment) => payment.value > 0);
@@ -1577,12 +1756,20 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
       }
     }
 
+    if (serviceType === 'BALCAO') {
+      await serviceOrderService.complete(orderData.id);
+    }
+
     // 2. Create Delivery Job if needed
     if (serviceType === 'DELIVERY' && !initialData) {
       await createDeliveryJobFromOS(orderData);
     }
 
     onSuccess();
+    } catch (error) {
+      console.error('Erro ao salvar O.S.:', error);
+      toast.error('Nao foi possivel salvar a O.S.');
+    }
   };
 
   return (
@@ -1784,7 +1971,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
                 <label className="font-semibold text-gray-700">Endereço:</label>
                 <input
                   type="text"
-                  value={selectedClient?.endereco || ''}
+                  value={getClientAddress(selectedClient) || ''}
                   readOnly
                   placeholder="Endereço completo"
                   className="h-8 px-2 rounded border border-gray-300 bg-white text-gray-500"
@@ -1811,6 +1998,7 @@ const OrderCreationForm: React.FC<OrderCreationFormProps> = ({ onCancel, onSucce
               selectedDepositId={depositId || null}
               items={items}
               setItems={setItems}
+              clientSpecialPrices={clientSpecialPrices}
               includeProductIds={deliveryFeeProductId ? [deliveryFeeProductId] : []}
               lockedProductIds={deliveryFeeProductId ? [deliveryFeeProductId] : []}
               onRemoveItem={handleRemoveOrderItem}
@@ -2353,17 +2541,24 @@ export const NewServiceOrder: React.FC<NewServiceOrderProps> = ({ onClose, curre
   const handleStatusChange = async (osId: string, newStatus: StatusOS, motivo?: string) => {
     if (newStatus === 'CANCELADA' && !confirm("Deseja realmente cancelar esta O.S?")) return;
     try {
-      await updateServiceOrderStatus(osId, newStatus, motivo, getSessionUserName() || 'Operador');
+      await updateServiceOrderStatus(osId, newStatus, motivo);
       setOrders(await listServiceOrders());
     } catch (err) {
       console.error(err);
-      alert('Não foi possível atualizar o status da O.S. Verifique os dados e tente novamente.');
+      toast.error('Nao foi possivel atualizar o status da O.S. Verifique os dados e tente novamente.');
     }
   };
 
-  const handleEdit = (os: OrdemServico) => {
-    setEditingOrder(os);
-    setView('create');
+  const handleEdit = async (os: OrdemServico) => {
+    try {
+      const fullOrder = await serviceOrderService.getById(os.id);
+      const mapped = fullOrder ? mapCompleteServiceOrderToDomain(fullOrder) : os;
+      setEditingOrder(mapped);
+      setView('create');
+    } catch (error) {
+      console.error('Erro ao carregar O.S. para edicao:', error);
+      toast.error('Nao foi possivel carregar a O.S. para edicao.');
+    }
   };
 
   const handleCreateNew = () => {
@@ -2515,11 +2710,17 @@ export const NewServiceOrder: React.FC<NewServiceOrderProps> = ({ onClose, curre
                           <span className="truncate max-w-md">{os.enderecoEntrega || 'Endereço não informado'}</span>
                        </div>
                        <div className="flex flex-wrap gap-2 mt-2">
-                          {os.itens.map((item, idx) => (
-                             <span key={idx} className="text-xs font-bold text-txt-muted bg-app px-2 py-1 rounded border border-bdr">
+                          {(os.itens ?? []).length === 0 ? (
+                            <span className="text-xs font-bold text-txt-muted bg-app px-2 py-1 rounded border border-bdr">
+                              Itens indisponiveis
+                            </span>
+                          ) : (
+                            (os.itens ?? []).map((item, idx) => (
+                              <span key={idx} className="text-xs font-bold text-txt-muted bg-app px-2 py-1 rounded border border-bdr">
                                 {item.quantidade}x {products.find(p => p.id === item.produtoId)?.nome}
-                             </span>
-                          ))}
+                              </span>
+                            ))
+                          )}
                        </div>
                     </div>
                  </div>

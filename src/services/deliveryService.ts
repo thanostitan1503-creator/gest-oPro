@@ -13,6 +13,17 @@ export type ZonePricing = Database['public']['Tables']['zone_pricing']['Row'];
 export type DeliveryJob = Database['public']['Tables']['delivery_jobs']['Row'];
 export type DriverPresence = Database['public']['Tables']['driver_presence']['Row'];
 
+const listActiveSectors = async (): Promise<DeliverySector[]> => {
+  const { data, error } = await supabase
+    .from('delivery_sectors')
+    .select('id, name, zone_id, is_active')
+    .eq('is_active', true)
+    .order('name');
+
+  if (error) throw new Error(`Erro ao listar setores: ${error.message}`);
+  return data || [];
+};
+
 export const deliveryService = {
     /**
      * Listar todas as zonas + precificação
@@ -88,14 +99,14 @@ export const deliveryService = {
    * 2b. Listar todos os setores ativos
    */
   async getSectors(): Promise<DeliverySector[]> {
-    const { data, error } = await supabase
-      .from('delivery_sectors')
-      .select('*')
-      .eq('is_active', true)
-      .order('name');
+    return listActiveSectors();
+  },
 
-    if (error) throw new Error(`Erro ao listar setores: ${error.message}`);
-    return data || [];
+  /**
+   * 2c. Listar setores ativos (alias para compatibilidade)
+   */
+  async listSectors(): Promise<DeliverySector[]> {
+    return listActiveSectors();
   },
 
   /**

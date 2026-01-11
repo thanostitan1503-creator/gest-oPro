@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 // ⚠️ REMOVIDO v3.0: useLiveQuery (use useState + useEffect + Services)
 import { 
   X, Users, Search, Plus, Trash2, 
@@ -11,131 +11,233 @@ import {
   Cliente, ClientePreco, ClienteDescontoPendente, 
   UserRole, DepositoFisicoId, ModalidadeItem 
 } from '@/domain/types';
-import { supabase } from '@/utils/supabaseClient';
+import { RIO_VERDE_NEIGHBORHOODS } from '@/domain/rioVerdeNeighborhoods';
+import {
+  clientService,
+  deleteClientDiscount,
+  deleteClientPriceOverride,
+  depositService,
+  deliveryService,
+  listClientDiscounts,
+  listClientPriceOverrides,
+  productService,
+  saveClientDiscount,
+  upsertClientPriceOverride,
+  type ClientDiscountInsert,
+  type ClientDiscountRow,
+  type ClientPriceOverrideInsert,
+  type ClientPriceOverrideRow,
+  type DeliveryZone,
+  type NewClient,
+  type Product,
+  type UpdateClient,
+} from '@/services';
 import { normalizeDateForSupabase } from '@/utils/date';
+import { toast } from 'sonner';
 // ⚠️ REMOVIDO v3.0: db local (use Services: import { xxxService } from '@/services')
 
 // ⚠️ REMOVIDO v3.0: // ⚠️ REMOVIDO v3.0 (use Services): import repositories
 
 // Funções auxiliares para comunicação com Supabase
+const buildFullAddress = (
+  street?: string | null,
+  neighborhood?: string | null,
+  fallback?: string | null
+) => {
+  const parts = [street?.trim(), neighborhood?.trim()].filter(Boolean);
+  if (parts.length > 0) return parts.join(' - ');
+  return (fallback ?? '').trim();
+};
+
 const listClients = async (): Promise<Cliente[]> => {
-  const { data, error } = await supabase.from('clients').select('*').order('name');
-  if (error) throw error;
-  return (data || []).map((c: any) => ({
-    id: c.id,
-    nome: c.name,
-    endereco: c.address,
-    telefone: c.phone,
-    cpf: c.cpf,
-    referencia: c.reference,
-    dataNascimento: c.birth_date,
-    deliveryZoneId: c.delivery_zone_id,
-    ativo: c.is_active,
-    criado_em: new Date(c.created_at).getTime(),
-    atualizado_em: new Date(c.updated_at).getTime(),
-  }));
+  const data = await clientService.getAll({ includeInactive: true });
+  return (data || []).map((c) => {
+    const endereco = buildFullAddress(c.street_address, c.neighborhood, c.address);
+    return {
+      id: c.id,
+      nome: c.name,
+      endereco,
+      streetAddress: c.street_address ?? c.address ?? '',
+      neighborhood: c.neighborhood ?? '',
+      deliverySectorId: c.delivery_sector_id ?? null,
+      telefone: c.phone ?? undefined,
+      cpf: c.cpf ?? undefined,
+      referencia: c.reference ?? undefined,
+      dataNascimento: c.birth_date ?? undefined,
+      deliveryZoneId: c.delivery_zone_id ?? null,
+      ativo: c.is_active ?? c.active ?? true,
+      criado_em: c.created_at ? new Date(c.created_at).getTime() : Date.now(),
+      atualizado_em: c.updated_at ? new Date(c.updated_at).getTime() : Date.now(),
+    };
+  });
 };
 
 const upsertClient = async (client: Partial<Cliente>): Promise<void> => {
   const nowIso = new Date().toISOString();
   const birth = normalizeDateForSupabase(client.dataNascimento);
+  const endereco = buildFullAddress(client.streetAddress, client.neighborhood, client.endereco);
 
-  const dbClient: any = {
-    id: client.id,
-    name: client.nome,
-    address: client.endereco,
-    phone: client.telefone,
-    cpf: client.cpf,
-    reference: client.referencia,
+  const basePayload = {
+    name: client.nome || '',
+    address: endereco || null,
+    street_address: client.streetAddress?.trim() || null,
+    neighborhood: client.neighborhood?.trim() || null,
+    delivery_sector_id: client.deliverySectorId ?? null,
+    phone: client.telefone || null,
+    cpf: client.cpf || null,
+    reference: client.referencia || null,
     birth_date: birth,
     delivery_zone_id: client.deliveryZoneId ?? null,
     is_active: client.ativo ?? true,
     updated_at: nowIso,
   };
 
-  if (!client.id) {
-    dbClient.created_at = nowIso;
+  if (client.id) {
+    const payload: UpdateClient = basePayload;
+    await clientService.update(client.id, payload);
+    return;
   }
 
-  const { error } = await supabase.from('clients').upsert(dbClient);
-  if (error) throw error;
+  const payload: NewClient = {
+    ...basePayload,
+    created_at: nowIso,
+  };
+  await clientService.create(payload);
 };
 
 const deleteClient = async (id: string): Promise<void> => {
-  const { error } = await supabase.from('clients').delete().eq('id', id);
-  if (error) throw error;
+  await clientService.remove(id);
+};
+
+const normalizeMovementType = (value?: string | null): ModalidadeItem => {
+  const raw = String(value ?? '').trim().toUpperCase();
+  if (raw === 'SIMPLES') return 'SIMPLE';
+  if (raw === 'TROCA') return 'EXCHANGE';
+  if (raw === 'COMPLETA') return 'FULL';
+  if (!raw) return 'SIMPLE';
+  return raw;
+};
+
+const mapClientPriceOverride = (row: ClientPriceOverrideRow): ClientePreco => {
+  const priceRaw = row.special_price;
+  const precoEspecial =
+    priceRaw === null || priceRaw === undefined ? null : Number(priceRaw);
+
+  return {
+    id: row.id,
+    clienteId: row.client_id,
+    produtoId: row.product_id,
+    depositoId: row.deposit_id,
+    modalidade: normalizeMovementType(row.modality),
+    precoEspecial,
+    ativo: row.is_active ?? true,
+    atualizado_em: row.updated_at
+      ? new Date(row.updated_at).getTime()
+      : row.created_at
+        ? new Date(row.created_at).getTime()
+        : Date.now(),
+  };
+};
+
+const buildPriceKey = (
+  clienteId: string,
+  produtoId: string,
+  modalidade: ModalidadeItem,
+  depositoId: DepositoFisicoId | null
+) => {
+  const depositKey = depositoId ?? 'GLOBAL';
+  return `${clienteId}:${produtoId}:${modalidade}:${depositKey}`;
 };
 
 const listClientPrices = async (): Promise<ClientePreco[]> => {
-  const { data, error } = await supabase.from('client_price_overrides').select('*');
-  if (error) throw error;
-  return (data || []).map((p: any) => ({
-    id: p.id,
-    clienteId: p.client_id,
-    produtoId: p.product_id,
-    depositoId: p.deposit_id,
-    modalidade: p.modality,
-    precoEspecial: p.special_price,
-    ativo: p.is_active,
-    atualizado_em: new Date(p.updated_at).getTime(),
-  }));
+  const data = await listClientPriceOverrides();
+  return (data || []).map(mapClientPriceOverride);
 };
 
-const upsertClientPrice = async (price: ClientePreco): Promise<void> => {
-  const dbPrice: any = {
-    id: price.id,
-    client_id: price.clienteId,
-    product_id: price.produtoId,
-    deposit_id: price.depositoId,
-    modality: price.modalidade,
-    special_price: price.precoEspecial,
-    is_active: price.ativo,
-  };
-  const { error } = await supabase.from('client_price_overrides').upsert(dbPrice);
-  if (error) throw error;
+const saveClientPrice = async (
+  payload: ClientPriceOverrideInsert
+): Promise<ClientePreco> => {
+  const saved = await upsertClientPriceOverride(payload);
+  return mapClientPriceOverride(saved);
 };
 
 const deleteClientPrice = async (id: string): Promise<void> => {
-  const { error } = await supabase.from('client_price_overrides').delete().eq('id', id);
-  if (error) throw error;
+  await deleteClientPriceOverride(id);
 };
 
-const listClientDiscounts = async (): Promise<ClienteDescontoPendente[]> => {
-  const { data, error } = await supabase.from('client_one_time_benefits').select('*');
-  if (error) throw error;
-  return (data || []).map((d: any) => ({
-    id: d.id,
-    clienteId: d.client_id,
-    depositoId: d.deposit_id,
-    tipoDesconto: d.discount_type,
-    valorDesconto: d.discount_value,
-    usado: d.used,
-    criado_em: new Date(d.created_at).getTime(),
-  }));
+const mapClientDiscountRow = (row: ClientDiscountRow): ClienteDescontoPendente => {
+  const percentRaw = row.discount_percent;
+  const valueRaw = row.discount_value;
+  const percentValue =
+    percentRaw === null || percentRaw === undefined ? null : Number(percentRaw);
+  const valueValue =
+    valueRaw === null || valueRaw === undefined ? null : Number(valueRaw);
+  const tipoDesconto =
+    percentValue !== null && Number.isFinite(percentValue) && percentValue > 0
+      ? 'PERCENTUAL'
+      : 'VALOR';
+  const valorDesconto =
+    tipoDesconto === 'PERCENTUAL'
+      ? Number.isFinite(percentValue ?? NaN)
+        ? Number(percentValue)
+        : 0
+      : Number.isFinite(valueValue ?? NaN)
+        ? Number(valueValue)
+        : 0;
+  const statusRaw = String(row.status ?? '').trim().toUpperCase();
+  const usado =
+    !!row.used_at ||
+    !!row.used_in_order_id ||
+    (statusRaw !== '' && statusRaw !== 'PENDING');
+
+  return {
+    id: row.id,
+    clienteId: row.client_id,
+    depositoId: row.deposit_id ?? null,
+    tipoDesconto,
+    valorDesconto,
+    usado,
+    usadoEmOsId: row.used_in_order_id ?? null,
+    criado_em: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+    usado_em: row.used_at ? new Date(row.used_at).getTime() : null,
+  };
 };
 
-const upsertClientDiscount = async (discount: ClienteDescontoPendente): Promise<void> => {
-  const dbDiscount: any = {
+const listClientDiscountsUI = async (): Promise<ClienteDescontoPendente[]> => {
+  const data = await listClientDiscounts();
+  return (data || []).map(mapClientDiscountRow);
+};
+
+const saveClientDiscountUI = async (
+  discount: ClienteDescontoPendente
+): Promise<ClienteDescontoPendente> => {
+  const rawValue = Number(discount.valorDesconto ?? 0);
+  const safeValue = Number.isFinite(rawValue) ? rawValue : 0;
+  const isPercentual = discount.tipoDesconto === 'PERCENTUAL';
+  const payload: ClientDiscountInsert = {
     id: discount.id,
     client_id: discount.clienteId,
-    deposit_id: discount.depositoId,
-    discount_type: discount.tipoDesconto,
-    discount_value: discount.valorDesconto,
-    used: discount.usado,
+    deposit_id: discount.depositoId ?? null,
+    benefit_type: 'DISCOUNT',
+    discount_value: isPercentual ? null : safeValue,
+    discount_percent: isPercentual ? safeValue : null,
+    status: discount.usado ? 'USED' : 'PENDING',
+    used_in_order_id: discount.usadoEmOsId ?? null,
+    used_at: discount.usado_em
+      ? new Date(discount.usado_em).toISOString()
+      : null,
   };
-  const { error } = await supabase.from('client_one_time_benefits').upsert(dbDiscount);
-  if (error) throw error;
+  const saved = await saveClientDiscount(payload);
+  return mapClientDiscountRow(saved);
 };
 
-const deleteClientDiscount = async (id: string): Promise<void> => {
-  const { error } = await supabase.from('client_one_time_benefits').delete().eq('id', id);
-  if (error) throw error;
+const deleteClientDiscountUI = async (id: string): Promise<void> => {
+  await deleteClientDiscount(id);
 };
 
 const listDeposits = async (): Promise<Array<{ id: string; nome: string }>> => {
-  const { data, error } = await supabase.from('deposits').select('id, name').eq('active', true);
-  if (error) throw error;
-  return (data || []).map((d: any) => ({ id: d.id, nome: d.name }));
+  const data = await depositService.getAll();
+  return (data || []).map((d) => ({ id: d.id, nome: d.name ?? d.id }));
 };
 
 interface ClientsModuleProps {
@@ -148,7 +250,23 @@ interface ClientsModuleProps {
 // EXCHANGE = Troca (sai cheio, entra vazio)
 // FULL = Venda completa (sai cheio + casco, sem retorno)
 const MODALIDADES: ModalidadeItem[] = ['SIMPLE', 'EXCHANGE', 'FULL'];
-const EMPTY_CLIENT: Partial<Cliente> = { nome: '', endereco: '', telefone: '', cpf: '', referencia: '', dataNascimento: '', deliveryZoneId: null };
+const MODALIDADE_LABELS: Record<string, string> = {
+  SIMPLE: 'Simples',
+  EXCHANGE: 'Troca',
+  FULL: 'Completa',
+};
+const EMPTY_CLIENT: Partial<Cliente> = {
+  nome: '',
+  endereco: '',
+  streetAddress: '',
+  neighborhood: '',
+  deliverySectorId: null,
+  telefone: '',
+  cpf: '',
+  referencia: '',
+  dataNascimento: '',
+  deliveryZoneId: null
+};
 
 export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole }) => {
   const isAdmin = userRole === 'ADMIN';
@@ -166,16 +284,21 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
 
   // --- Estados de Formulário ---
   const [clientForm, setClientForm] = useState<Partial<Cliente>>(EMPTY_CLIENT);
+  const [neighborhoodSearch, setNeighborhoodSearch] = useState('');
+  const [neighborhoodOpen, setNeighborhoodOpen] = useState(false);
+  const neighborhoodSearchRef = useRef<HTMLInputElement>(null);
 
   const [priceForm, setPriceForm] = useState({
-    produtoId: 'P13',
-    depositoId: 'GLOBAL' as DepositoFisicoId | 'GLOBAL',
-    modalidade: 'VENDA' as ModalidadeItem,
+    produtoId: '',
+    depositoId: '' as DepositoFisicoId | '',
+    depositoScope: 'GLOBAL' as 'GLOBAL' | 'DEPOSIT',
+    modalidade: MODALIDADES[0] as ModalidadeItem,
     preco: ''
   });
 
+  const [products, setProducts] = useState<Product[]>([]);
   const [deposits, setDeposits] = useState<Array<{ id: string; nome: string }>>([]);
-  const [deliveryZones, setDeliveryZones] = useState<Array<any>>([]);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
 
   const [discountForm, setDiscountForm] = useState<Partial<ClienteDescontoPendente>>({
     tipoDesconto: 'VALOR',
@@ -188,15 +311,37 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [c, p, d] = await Promise.all([
-        listClients(),
-        listClientPrices(),
-        listClientDiscounts(),
-      ]);
-      if (!alive) return;
-      setClientes(c);
-      setPrecos(p);
-      setDescontos(d);
+      try {
+        const [c, p, d] = await Promise.all([
+          listClients(),
+          listClientPrices(),
+          listClientDiscountsUI(),
+        ]);
+        if (!alive) return;
+        setClientes(c);
+        setPrecos(p);
+        setDescontos(d);
+      } catch (error) {
+        console.error('Erro ao carregar dados de clientes:', error);
+        toast.error('Nao foi possivel carregar dados de clientes.');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await productService.getAll();
+        if (!alive) return;
+        setProducts(data || []);
+      } catch (error) {
+        console.error('Erro ao carregar produtos:', error);
+        toast.error('Nao foi possivel carregar produtos.');
+      }
     })();
     return () => {
       alive = false;
@@ -209,9 +354,10 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
       try {
         const deps = await listDeposits();
         if (!alive) return;
-        setDeposits(deps.map((x: any) => ({ id: x.id, nome: x.nome })));
+        setDeposits(deps.map((x) => ({ id: x.id, nome: x.nome })));
       } catch (e) {
-        // ignore
+        console.error('Erro ao carregar depósitos:', e);
+        toast.error('Nao foi possivel carregar depositos.');
       }
     })();
     return () => { alive = false; };
@@ -222,22 +368,29 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
     let alive = true;
     (async () => {
       try {
-        // ⚠️ TODO v3.0: Implementar deliveryService.listZones()
-        // const zones = await deliveryService.listZones();
-        // if (!alive) return;
-        // setDeliveryZones(zones);
+        const zones = await deliveryService.getZones();
+        if (!alive) return;
+        setDeliveryZones(zones || []);
       } catch (e) {
         console.error('Erro ao carregar zonas:', e);
+        toast.error('Nao foi possivel carregar zonas de entrega.');
       }
     })();
     return () => { alive = false; };
   }, []);
 
+  useEffect(() => {
+    if (neighborhoodOpen) {
+      neighborhoodSearchRef.current?.focus();
+    }
+  }, [neighborhoodOpen]);
+
+
   const reloadAll = async () => {
     const [c, p, d] = await Promise.all([
       listClients(),
       listClientPrices(),
-      listClientDiscounts(),
+      listClientDiscountsUI(),
     ]);
     setClientes(c);
     setPrecos(p);
@@ -258,6 +411,14 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
     );
   });
 
+  const filteredNeighborhoods = useMemo(
+    () =>
+      RIO_VERDE_NEIGHBORHOODS.filter((b) =>
+        b.toLowerCase().includes(neighborhoodSearch.toLowerCase())
+      ),
+    [neighborhoodSearch]
+  );
+
   const selectedClient = useMemo(() => 
     clientes.find(c => c.id === selectedClientId), 
     [selectedClientId, clientes]
@@ -272,6 +433,68 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
     descontos.find(d => d.clienteId === selectedClientId && !d.usado), 
     [selectedClientId, descontos]
   );
+
+  const depositNameById = useMemo(() => {
+    return deposits.reduce<Record<string, string>>((acc, deposit) => {
+      acc[deposit.id] = deposit.nome;
+      return acc;
+    }, {});
+  }, [deposits]);
+
+  const resolveDepositLabel = (depositoId: DepositoFisicoId | null) => {
+    if (!depositoId) return 'GLOBAL';
+    return depositNameById[depositoId] ?? depositoId;
+  };
+
+  const buildProductLabel = (product: Product) => {
+    const code = (product.code ?? '').trim().toUpperCase();
+    const name = (product.name ?? '').trim();
+    if (code === 'P13') return 'Gás P13';
+    if (code === 'P45') return 'Gás P45';
+    if (code === 'AGUA20' || code === 'ÁGUA20') return 'Água 20L';
+    if (code) return code;
+    if (name) return name;
+    return product.id;
+  };
+
+  const isBaseProduct = (product: Product) => {
+    const code = (product.code ?? '').toUpperCase();
+    const name = (product.name ?? '').toUpperCase();
+    return (
+      code.includes('P13') ||
+      name.includes('P13') ||
+      code.includes('P45') ||
+      name.includes('P45') ||
+      code.includes('AGUA20') ||
+      name.includes('AGUA 20') ||
+      name.includes('ÁGUA 20')
+    );
+  };
+
+  const priceProducts = useMemo(() => {
+    const matches = products.filter(isBaseProduct);
+    const list = matches.length > 0 ? matches : products;
+    return [...list].sort((a, b) =>
+      buildProductLabel(a).localeCompare(buildProductLabel(b), 'pt-BR')
+    );
+  }, [products]);
+
+  const productLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    products.forEach((product) => {
+      map.set(product.id, buildProductLabel(product));
+    });
+    return map;
+  }, [products]);
+
+  useEffect(() => {
+    if (priceProducts.length === 0) return;
+    setPriceForm((prev) => {
+      const exists = priceProducts.some((product) => product.id === prev.produtoId);
+      if (exists) return prev;
+      return { ...prev, produtoId: priceProducts[0].id };
+    });
+  }, [priceProducts]);
 
   // --- Ações de Cliente ---
   const handleNewClient = () => {
@@ -291,53 +514,74 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
   };
 
   const saveClient = async () => {
-    if (!clientForm.nome || !clientForm.endereco) return alert("Preencha Nome e Endereço.");
-    
-    const now = Date.now();
-    
-    if (selectedClientId) {
-      await upsertClient({
-        id: selectedClientId,
-        nome: clientForm.nome,
-        endereco: clientForm.endereco,
-        telefone: clientForm.telefone,
-        cpf: clientForm.cpf,
-        referencia: clientForm.referencia,
-        dataNascimento: clientForm.dataNascimento,
-        deliveryZoneId: clientForm.deliveryZoneId ?? null,
-        ativo: clientForm.ativo ?? true,
-        criado_em: (clientes.find(c => c.id === selectedClientId)?.criado_em) ?? now,
-        atualizado_em: now,
-      } as any);
-    } else {
-      await upsertClient({
-        nome: clientForm.nome,
-        endereco: clientForm.endereco,
-        telefone: clientForm.telefone,
-        cpf: clientForm.cpf,
-        referencia: clientForm.referencia,
-        dataNascimento: clientForm.dataNascimento,
-        deliveryZoneId: clientForm.deliveryZoneId ?? null,
-        ativo: true,
-        criado_em: now,
-        atualizado_em: now,
-      } as any);
+    const streetAddress = (clientForm.streetAddress || '').trim();
+    const neighborhood = (clientForm.neighborhood || '').trim();
+    if (!clientForm.nome || !streetAddress || !neighborhood) {
+      toast.error('Preencha Nome, Logradouro e Bairro/Setor.');
+      return;
     }
+    const endereco = buildFullAddress(streetAddress, neighborhood, clientForm.endereco);
 
-    await reloadAll();
-    setIsEditing(false);
+    const now = Date.now();
+    try {
+      if (selectedClientId) {
+        await upsertClient({
+          id: selectedClientId,
+          nome: clientForm.nome,
+          endereco,
+          streetAddress,
+          neighborhood,
+          deliverySectorId: clientForm.deliverySectorId ?? null,
+          telefone: clientForm.telefone,
+          cpf: clientForm.cpf,
+          referencia: clientForm.referencia,
+          dataNascimento: clientForm.dataNascimento,
+          deliveryZoneId: clientForm.deliveryZoneId ?? null,
+          ativo: clientForm.ativo ?? true,
+          criado_em: (clientes.find(c => c.id === selectedClientId)?.criado_em) ?? now,
+          atualizado_em: now,
+        });
+      } else {
+        await upsertClient({
+          nome: clientForm.nome,
+          endereco,
+          streetAddress,
+          neighborhood,
+          deliverySectorId: clientForm.deliverySectorId ?? null,
+          telefone: clientForm.telefone,
+          cpf: clientForm.cpf,
+          referencia: clientForm.referencia,
+          dataNascimento: clientForm.dataNascimento,
+          deliveryZoneId: clientForm.deliveryZoneId ?? null,
+          ativo: true,
+          criado_em: now,
+          atualizado_em: now,
+        });
+      }
+
+      await reloadAll();
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Erro ao salvar cliente:', error);
+      toast.error('Nao foi possivel salvar o cliente.');
+    }
   };
 
   const toggleStatus = async () => {
     if (!selectedClientId) return;
     const current = clientes.find(c => c.id === selectedClientId);
     if (!current) return;
-    await upsertClient({
-      ...current,
-      ativo: !current.ativo,
-      atualizado_em: Date.now(),
-    } as any);
-    await reloadAll();
+    try {
+      await upsertClient({
+        ...current,
+        ativo: !current.ativo,
+        atualizado_em: Date.now(),
+      } as any);
+      await reloadAll();
+    } catch (error) {
+      console.error('Erro ao atualizar status do cliente:', error);
+      toast.error('Nao foi possivel atualizar o status do cliente.');
+    }
   };
 
   const handleDeleteClient = async () => {
@@ -347,37 +591,92 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
     const confirmed = window.confirm(`Excluir permanentemente ${name}? Essa ação não pode ser desfeita.`);
     if (!confirmed) return;
 
-    await deleteClient(selectedClientId);
-    await reloadAll();
-    setSelectedClientId(null);
-    setClientForm(EMPTY_CLIENT);
-    setIsEditing(false);
-    setActiveTab('dados');
+    try {
+      await deleteClient(selectedClientId);
+      await reloadAll();
+      setSelectedClientId(null);
+      setClientForm(EMPTY_CLIENT);
+      setIsEditing(false);
+      setActiveTab('dados');
+    } catch (error) {
+      console.error('Erro ao remover cliente:', error);
+      toast.error('Nao foi possivel remover o cliente.');
+    }
   };
 
   // --- Ações de Preço ---
   const addPrice = async () => {
-    if (!selectedClientId || !priceForm.preco) return;
-    
-    const newPrice: ClientePreco = {
-      id: crypto.randomUUID(),
-      clienteId: selectedClientId,
-      produtoId: priceForm.produtoId,
-      depositoId: priceForm.depositoId === 'GLOBAL' ? null : priceForm.depositoId as DepositoFisicoId,
-      modalidade: priceForm.modalidade,
-      precoEspecial: parseFloat(priceForm.preco),
-      ativo: true,
-      atualizado_em: Date.now()
+    if (!selectedClientId) return;
+    if (!priceForm.produtoId) {
+      toast.error('Selecione um produto base.');
+      return;
+    }
+    if (priceForm.preco === '') {
+      toast.error('Informe um valor válido para o preço especial.');
+      return;
+    }
+    const preco = Number(priceForm.preco);
+    if (!Number.isFinite(preco)) {
+      toast.error('Informe um valor válido para o preço especial.');
+      return;
+    }
+
+    const isGlobal = priceForm.depositoScope === 'GLOBAL';
+    const depositoId = isGlobal ? null : (priceForm.depositoId || null);
+    if (!isGlobal && !depositoId) {
+      toast.error('Selecione um depósito específico.');
+      return;
+    }
+
+    const payload: ClientPriceOverrideInsert = {
+      client_id: selectedClientId,
+      product_id: priceForm.produtoId,
+      deposit_id: isGlobal ? null : depositoId,
+      modality: normalizeMovementType(priceForm.modalidade),
+      special_price: preco,
+      is_active: true,
     };
 
-    await upsertClientPrice(newPrice);
-    await reloadAll();
-    setPriceForm({ ...priceForm, preco: '' });
+    try {
+      const savedPrice = await saveClientPrice(payload);
+      const savedKey = buildPriceKey(
+        savedPrice.clienteId,
+        savedPrice.produtoId,
+        savedPrice.modalidade,
+        savedPrice.depositoId
+      );
+
+      setPrecos((prev) => {
+        const index = prev.findIndex((price) => {
+          return (
+            buildPriceKey(
+              price.clienteId,
+              price.produtoId,
+              price.modalidade,
+              price.depositoId
+            ) === savedKey
+          );
+        });
+        if (index === -1) return [...prev, savedPrice];
+        const next = [...prev];
+        next[index] = savedPrice;
+        return next;
+      });
+      setPriceForm((prev) => ({ ...prev, preco: '' }));
+    } catch (error) {
+      console.error('Erro ao salvar preço especial:', error);
+      toast.error('Não foi possível salvar o preço especial.');
+    }
   };
 
   const deletePrice = async (id: string) => {
-    await deleteClientPrice(id);
-    await reloadAll();
+    try {
+      await deleteClientPrice(id);
+      setPrecos((prev) => prev.filter((price) => price.id !== id));
+    } catch (error) {
+      console.error('Erro ao remover preço especial:', error);
+      toast.error('Não foi possível remover o preço especial.');
+    }
   };
 
   // --- Ações de Desconto ---
@@ -394,9 +693,14 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
       criado_em: Date.now()
     };
 
-    await upsertClientDiscount(newDiscount);
-    await reloadAll();
-    alert("Desconto pendente salvo com sucesso!");
+    try {
+      await saveClientDiscountUI(newDiscount);
+      await reloadAll();
+      toast.success('Desconto pendente salvo com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar desconto pendente:', error);
+      toast.error('Nao foi possivel salvar o desconto pendente.');
+    }
   };
 
   const disableDiscount = async () => {
@@ -404,9 +708,14 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
     const confirmed = window.confirm('Remover o bônus pendente deste cliente?');
     if (!confirmed) return;
 
-    await deleteClientDiscount(clientDesconto.id);
-    await reloadAll();
-    alert('Bônus desativado com sucesso.');
+    try {
+      await deleteClientDiscountUI(clientDesconto.id);
+      await reloadAll();
+      toast.success('Bonus desativado com sucesso.');
+    } catch (error) {
+      console.error('Erro ao remover bonus pendente:', error);
+      toast.error('Nao foi possivel desativar o bonus pendente.');
+    }
   };
 
   return (
@@ -552,19 +861,70 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
                          </div>
                        </div>
                        
-                       <div className="col-span-2 group">
-                         <label className="block text-[11px] font-black text-primary uppercase mb-3 tracking-[0.2em] ml-1">Endereço Completo de Entrega *</label>
-                         <div className="relative">
-                            <MapPin className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-txt-muted group-focus-within:text-primary transition-colors" />
-                            <input 
-                              type="text" 
-                              value={clientForm.endereco} 
-                              onChange={e => setClientForm({...clientForm, endereco: e.target.value})}
-                              placeholder="LOGRADOURO, NÚMERO, BAIRRO..."
-                              className="w-full bg-app border-2 border-bdr rounded-[1.25rem] p-5 pl-14 text-base text-txt-main font-black focus:ring-4 focus:ring-primary/10 focus:bg-surface focus:border-primary outline-none shadow-sm transition-all placeholder:text-txt-muted/50 uppercase" 
-                            />
+                       <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-10">
+                         <div className="group">
+                           <label className="block text-[11px] font-black text-primary uppercase mb-3 tracking-[0.2em] ml-1">Logradouro / numero *</label>
+                           <div className="relative">
+                              <MapPin className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-txt-muted group-focus-within:text-primary transition-colors" />
+                              <input 
+                                type="text" 
+                                value={clientForm.streetAddress ?? ''} 
+                                onChange={e => setClientForm({ ...clientForm, streetAddress: e.target.value })}
+                                placeholder="Ex: Rua das Flores, 123"
+                                className="w-full bg-app border-2 border-bdr rounded-[1.25rem] p-5 pl-14 text-base text-txt-main font-black focus:ring-4 focus:ring-primary/10 focus:bg-surface focus:border-primary outline-none shadow-sm transition-all placeholder:text-txt-muted/50" 
+                              />
+                           </div>
+                         </div>
+
+                         <div className="group">
+                           <label className="block text-[11px] font-black text-primary uppercase mb-3 tracking-[0.2em] ml-1">Bairro / setor *</label>
+                           <div className="relative">
+                             <button
+                               type="button"
+                               onClick={() => setNeighborhoodOpen((open) => !open)}
+                               className="w-full bg-app border-2 border-bdr rounded-[1.25rem] p-5 text-base font-black focus:ring-4 focus:ring-primary/10 focus:bg-surface focus:border-primary outline-none shadow-sm transition-all text-left"
+                             >
+                               <span className={clientForm.neighborhood ? 'text-txt-main' : 'text-txt-muted/50'}>
+                                 {clientForm.neighborhood || 'Selecione o bairro / setor'}
+                               </span>
+                             </button>
+                             {neighborhoodOpen && (
+                               <div className="absolute z-20 mt-2 w-full rounded-[1.25rem] border-2 border-bdr bg-app shadow-lg">
+                                 <div className="p-3 border-b border-bdr">
+                                   <input
+                                     ref={neighborhoodSearchRef}
+                                     type="text"
+                                     value={neighborhoodSearch}
+                                     onChange={(e) => setNeighborhoodSearch(e.target.value)}
+                                     placeholder="Buscar bairro..."
+                                     className="w-full bg-surface border-2 border-bdr rounded-xl p-3 text-sm text-txt-main font-black outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                   />
+                                 </div>
+                                 <div className="max-h-64 overflow-y-auto">
+                                   {filteredNeighborhoods.length === 0 ? (
+                                     <div className="px-4 py-3 text-xs text-txt-muted">Nenhum bairro encontrado</div>
+                                   ) : (
+                                     filteredNeighborhoods.map((bairro) => (
+                                       <button
+                                         key={bairro}
+                                         type="button"
+                                         onClick={() => {
+                                           setClientForm((prev) => ({ ...prev, neighborhood: bairro }));
+                                           setNeighborhoodOpen(false);
+                                           setNeighborhoodSearch('');
+                                         }}
+                                         className="w-full text-left px-4 py-3 text-sm text-txt-main font-black hover:bg-bdr transition-colors"
+                                       >
+                                         {bairro}
+                                       </button>
+                                     ))
+                                   )}
+                                 </div>
+                               </div>
+                             )}
+                           </div>
+                         </div>
                        </div>
-                      </div>
 
                        <div className="col-span-2 group">
                          <label className="block text-[11px] font-black text-primary uppercase mb-3 tracking-[0.2em] ml-1">Zona de entrega</label>
@@ -574,9 +934,9 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
                            className="w-full bg-app border-2 border-bdr rounded-[1.25rem] p-5 text-base text-txt-main font-black focus:ring-4 focus:ring-primary/10 focus:bg-surface focus:border-primary outline-none shadow-sm transition-all"
                          >
                            <option value="">Sem zona definida</option>
-                           {deliveryZones.map((zone: any) => (
+                           {deliveryZones.map((zone) => (
                              <option key={zone.id} value={zone.id}>
-                               {zone.nome ?? zone.id}
+                               {zone.name ?? zone.id}
                              </option>
                            ))}
                          </select>
@@ -679,20 +1039,57 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
                            onChange={e => setPriceForm({...priceForm, produtoId: e.target.value})} 
                            className="w-full bg-surface border-2 border-amber-200 rounded-2xl p-4 text-sm text-txt-main font-black focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none shadow-sm transition-all"
                          >
-                           <option value="P13">GÁS P13</option>
-                           <option value="P45">GÁS P45</option>
-                           <option value="AGUA20">ÁGUA 20L</option>
+                           {priceProducts.length === 0 ? (
+                             <option value="">Carregando produtos...</option>
+                           ) : (
+                             priceProducts.map((product) => (
+                               <option key={product.id} value={product.id}>
+                                 {buildProductLabel(product)}
+                               </option>
+                             ))
+                           )}
                          </select>
                        </div>
                        
                        <div className="group">
                          <label className="block text-[11px] font-black text-amber-600 uppercase mb-3 tracking-widest ml-1">Alvo de Estoque</label>
+                         <div className="flex flex-wrap items-center gap-4 mb-3">
+                           <label className="flex items-center gap-2 text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                             <input
+                               type="radio"
+                               name="priceScope"
+                               className="accent-amber-600"
+                               checked={priceForm.depositoScope === 'GLOBAL'}
+                               onChange={() =>
+                                 setPriceForm((prev) => ({ ...prev, depositoScope: 'GLOBAL' }))
+                               }
+                             />
+                             Todos os depósitos
+                           </label>
+                           <label className="flex items-center gap-2 text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                             <input
+                               type="radio"
+                               name="priceScope"
+                               className="accent-amber-600"
+                               checked={priceForm.depositoScope === 'DEPOSIT'}
+                               onChange={() =>
+                                 setPriceForm((prev) => ({
+                                   ...prev,
+                                   depositoScope: 'DEPOSIT',
+                                   depositoId: prev.depositoId || deposits[0]?.id || '',
+                                 }))
+                               }
+                             />
+                             Depósito específico
+                           </label>
+                         </div>
                          <select 
                            value={priceForm.depositoId} 
                            onChange={e => setPriceForm({...priceForm, depositoId: e.target.value as any})} 
-                           className="w-full bg-surface border-2 border-amber-200 rounded-2xl p-4 text-sm text-txt-main font-black focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none shadow-sm transition-all"
+                           disabled={priceForm.depositoScope === 'GLOBAL'}
+                           className="w-full bg-surface border-2 border-amber-200 rounded-2xl p-4 text-sm text-txt-main font-black focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                          >
-                           <option key="GLOBAL" value={"GLOBAL"}>GLOBAL</option>
+                           <option value="">Selecione um depósito</option>
                            {deposits.map(d => <option key={d.id} value={d.id}>{d.nome}</option>)}
                          </select>
                        </div>
@@ -704,7 +1101,11 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
                            onChange={e => setPriceForm({...priceForm, modalidade: e.target.value as any})} 
                            className="w-full bg-surface border-2 border-amber-200 rounded-2xl p-4 text-sm text-txt-main font-black focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 outline-none shadow-sm transition-all"
                          >
-                           {MODALIDADES.map(m => <option key={m} value={m}>{m}</option>)}
+                           {MODALIDADES.map((m) => (
+                             <option key={m} value={m}>
+                               {MODALIDADE_LABELS[m] ?? m}
+                             </option>
+                           ))}
                          </select>
                        </div>
                        
@@ -748,11 +1149,15 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
                           ) : (
                             clientPrecos.map(p => (
                               <tr key={p.id} className="hover:bg-app transition-all group">
-                                <td className="px-10 py-6 font-black text-txt-main text-base">{p.produtoId}</td>
-                                <td className="px-10 py-6 text-txt-muted font-black text-xs uppercase tracking-widest">{p.depositoId || 'GLOBAL'}</td>
+                                <td className="px-10 py-6 font-black text-txt-main text-base">
+                                  {productLabelById.get(p.produtoId) ?? p.produtoId}
+                                </td>
+                                <td className="px-10 py-6 text-txt-muted font-black text-xs uppercase tracking-widest">
+                                  {resolveDepositLabel(p.depositoId)}
+                                </td>
                                 <td className="px-10 py-6">
                                   <span className="px-3 py-1.5 bg-amber-500/10 text-amber-600 text-[10px] font-black rounded-lg border-2 border-amber-500/20 uppercase tracking-widest">
-                                    {p.modalidade}
+                                    {MODALIDADE_LABELS[p.modalidade] ?? p.modalidade}
                                   </span>
                                 </td>
                                 <td className="px-10 py-6 text-right font-black text-amber-500 text-xl tracking-tighter">R$ {p.precoEspecial?.toFixed(2)}</td>
@@ -823,8 +1228,20 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
                              <div className="relative">
                                <input 
                                  type="number" 
-                                 value={discountForm.valorDesconto} 
-                                 onChange={e => setDiscountForm({...discountForm, valorDesconto: parseFloat(e.target.value)})} 
+                                 value={
+                                   Number.isFinite(discountForm.valorDesconto as number)
+                                     ? discountForm.valorDesconto
+                                     : ''
+                                 } 
+                                 onChange={(e) => {
+                                   const raw = e.target.value;
+                                   const parsed = Number(raw);
+                                   setDiscountForm({
+                                     ...discountForm,
+                                     valorDesconto:
+                                       raw === '' || !Number.isFinite(parsed) ? undefined : parsed,
+                                   });
+                                 }} 
                                  className="w-full bg-white/10 border-2 border-white/20 rounded-3xl p-5 text-2xl text-white font-black focus:ring-8 focus:ring-white/5 focus:bg-white focus:text-emerald-900 outline-none shadow-inner transition-all backdrop-blur-md" 
                                />
                                <span className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-white/50 text-xl group-focus-within:text-emerald-500">
@@ -852,6 +1269,3 @@ export const ClientsModule: React.FC<ClientsModuleProps> = ({ onClose, userRole 
     </div>
   );
 };
-
-
-

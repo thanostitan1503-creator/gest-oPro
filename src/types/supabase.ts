@@ -415,6 +415,7 @@ export type Database = {
           modality: string | null
           override_price: number | null
           product_id: string
+          special_price: number | null
           updated_at: string | null
         }
         Insert: {
@@ -426,6 +427,7 @@ export type Database = {
           modality?: string | null
           override_price?: number | null
           product_id: string
+          special_price?: number | null
           updated_at?: string | null
         }
         Update: {
@@ -437,6 +439,7 @@ export type Database = {
           modality?: string | null
           override_price?: number | null
           product_id?: string
+          special_price?: number | null
           updated_at?: string | null
         }
         Relationships: [
@@ -470,12 +473,17 @@ export type Database = {
           birth_date: string | null
           cpf: string | null
           created_at: string | null
+          delivery_sector_id: string | null
           delivery_zone_id: string | null
+          house_number: string | null
           id: string
           is_active: boolean | null
           name: string
+          neighborhood: string | null
           phone: string | null
           reference: string | null
+          street: string | null
+          street_address: string | null
           updated_at: string | null
         }
         Insert: {
@@ -484,12 +492,17 @@ export type Database = {
           birth_date?: string | null
           cpf?: string | null
           created_at?: string | null
+          delivery_sector_id?: string | null
           delivery_zone_id?: string | null
+          house_number?: string | null
           id?: string
           is_active?: boolean | null
           name: string
+          neighborhood?: string | null
           phone?: string | null
           reference?: string | null
+          street?: string | null
+          street_address?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -498,15 +511,34 @@ export type Database = {
           birth_date?: string | null
           cpf?: string | null
           created_at?: string | null
+          delivery_sector_id?: string | null
           delivery_zone_id?: string | null
+          house_number?: string | null
           id?: string
           is_active?: boolean | null
           name?: string
+          neighborhood?: string | null
           phone?: string | null
           reference?: string | null
+          street?: string | null
+          street_address?: string | null
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "clients_delivery_sector_fk"
+            columns: ["delivery_sector_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_sectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_delivery_sector_id_fkey"
+            columns: ["delivery_sector_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_sectors"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "fk_clients_delivery_zone"
             columns: ["delivery_zone_id"]
@@ -938,6 +970,36 @@ export type Database = {
           },
         ]
       }
+      neighborhoods: {
+        Row: {
+          center_lat: number | null
+          center_lng: number | null
+          city: string
+          created_at: string
+          id: string
+          name: string
+          state: string
+        }
+        Insert: {
+          center_lat?: number | null
+          center_lng?: number | null
+          city?: string
+          created_at?: string
+          id?: string
+          name: string
+          state?: string
+        }
+        Update: {
+          center_lat?: number | null
+          center_lng?: number | null
+          city?: string
+          created_at?: string
+          id?: string
+          name?: string
+          state?: string
+        }
+        Relationships: []
+      }
       outbox_events: {
         Row: {
           action: string
@@ -1152,7 +1214,7 @@ export type Database = {
           exchange_price: number | null
           full_price: number | null
           id: string
-          mode: string | null
+          mode: Database["public"]["Enums"]["pricing_mode"]
           price: number
           product_id: string
           updated_at: string | null
@@ -1163,7 +1225,7 @@ export type Database = {
           exchange_price?: number | null
           full_price?: number | null
           id?: string
-          mode?: string | null
+          mode?: Database["public"]["Enums"]["pricing_mode"]
           price: number
           product_id: string
           updated_at?: string | null
@@ -1174,7 +1236,7 @@ export type Database = {
           exchange_price?: number | null
           full_price?: number | null
           id?: string
-          mode?: string | null
+          mode?: Database["public"]["Enums"]["pricing_mode"]
           price?: number
           product_id?: string
           updated_at?: string | null
@@ -1397,6 +1459,7 @@ export type Database = {
           created_at: string | null
           delivery_address: string | null
           delivery_fee: number | null
+          delivery_sector_id: string | null
           delivery_status: string | null
           delivery_zone_id: string | null
           deposit_id: string
@@ -1419,6 +1482,7 @@ export type Database = {
           created_at?: string | null
           delivery_address?: string | null
           delivery_fee?: number | null
+          delivery_sector_id?: string | null
           delivery_status?: string | null
           delivery_zone_id?: string | null
           deposit_id: string
@@ -1441,6 +1505,7 @@ export type Database = {
           created_at?: string | null
           delivery_address?: string | null
           delivery_fee?: number | null
+          delivery_sector_id?: string | null
           delivery_status?: string | null
           delivery_zone_id?: string | null
           deposit_id?: string
@@ -1461,6 +1526,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_orders_delivery_sector_id_fkey"
+            columns: ["delivery_sector_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_sectors"
             referencedColumns: ["id"]
           },
           {
@@ -1952,7 +2024,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      pricing_mode: "SIMPLES" | "TROCA" | "COMPLETA"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2079,6 +2151,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      pricing_mode: ["SIMPLES", "TROCA", "COMPLETA"],
+    },
   },
 } as const

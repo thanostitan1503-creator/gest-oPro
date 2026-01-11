@@ -39,6 +39,117 @@ export interface CreateServiceOrderData {
  */
 export const serviceOrderService = {
   /**
+   * Upsert simples da O.S. (somente tabela service_orders).
+   * Usado quando a tela ja gerencia itens/pagamentos separadamente.
+   */
+  async upsertRecord(order: NewServiceOrder): Promise<void> {
+    const { error } = await supabase.from('service_orders').upsert(order);
+    if (error) throw new Error(`Erro ao salvar O.S.: ${error.message}`);
+  },
+
+  /**
+   * Upsert da O.S. com itens e pagamentos, sem movimentos de estoque.
+   */
+  async upsertWithDetails(data: CreateServiceOrderData): Promise<void> {
+    const { order, items, payments } = data;
+    const orderId = order.id;
+
+    if (!orderId) {
+      throw new Error('O.S. sem id para salvar itens/pagamentos.');
+    }
+
+    const { error: orderError } = await supabase
+      .from('service_orders')
+      .upsert(order);
+    if (orderError) throw new Error(`Erro ao salvar O.S.: ${orderError.message}`);
+
+    const { error: deleteItemsError } = await supabase
+      .from('service_order_items')
+      .delete()
+      .eq('order_id', orderId);
+    if (deleteItemsError) {
+      throw new Error(`Erro ao limpar itens da O.S.: ${deleteItemsError.message}`);
+    }
+
+    if (items.length > 0) {
+      const itemsWithOrderId = items.map((item) => ({
+        ...item,
+        order_id: orderId,
+      }));
+      const { error: itemsError } = await supabase
+        .from('service_order_items')
+        .insert(itemsWithOrderId);
+      if (itemsError) throw new Error(`Erro ao salvar itens da O.S.: ${itemsError.message}`);
+    }
+
+    const { error: deletePaymentsError } = await supabase
+      .from('service_order_payments')
+      .delete()
+      .eq('order_id', orderId);
+    if (deletePaymentsError) {
+      throw new Error(`Erro ao limpar pagamentos da O.S.: ${deletePaymentsError.message}`);
+    }
+
+    if (payments.length > 0) {
+      const paymentsWithOrderId = payments.map((payment) => ({
+        ...payment,
+        order_id: orderId,
+      }));
+      const { error: paymentsError } = await supabase
+        .from('service_order_payments')
+        .insert(paymentsWithOrderId);
+      if (paymentsError) {
+        throw new Error(`Erro ao salvar pagamentos da O.S.: ${paymentsError.message}`);
+      }
+    }
+  },
+
+  /**
+   * Atualiza apenas o status da O.S.
+   */
+  async updateStatus(id: string, status: ServiceOrder['status']): Promise<ServiceOrder> {
+    const payload: ServiceOrder['Update'] = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+    if (status === 'CONCLUIDA') {
+      payload.completed_at = new Date().toISOString();
+    }
+    const { data, error } = await supabase
+      .from('service_orders')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw new Error(`Erro ao atualizar status: ${error.message}`);
+    return data as ServiceOrder;
+  },
+
+  /**
+   * Conclui a O.S. e aplica movimentos de estoque.
+   */
+  async complete(id: string): Promise<ServiceOrder> {
+    const order = await this.getById(id);
+    if (!order) throw new Error('O.S. nao encontrada');
+    const { count, error: movementError } = await supabase
+      .from('stock_movements')
+      .select('id', { count: 'exact', head: true })
+      .eq('reference_id', id);
+    if (movementError) {
+      throw new Error(`Erro ao validar movimentos de estoque: ${movementError.message}`);
+    }
+    const hasMovements = (count ?? 0) > 0;
+
+    const updated =
+      order.status === 'CONCLUIDA' ? order : await this.updateStatus(id, 'CONCLUIDA');
+
+    if (!hasMovements) {
+      await this._createStockMovements(updated, order.items);
+    }
+
+    return updated;
+  },
+  /**
    * 1. Criar O.S. completa (venda + itens + pagamentos + movimentos de estoque)
    * 
    * ⚠️ IMPORTANTE: Esta operação é ATÔMICA. Se algo falhar, nada é salvo.
@@ -180,11 +291,57 @@ export const serviceOrderService = {
   async cancel(id: string, reason: string): Promise<ServiceOrder> {
     // Busca O.S. com itens
     const order = await this.getById(id);
-    if (!order) throw new Error('O.S. não encontrada');
-    if (order.status === 'CANCELADA') throw new Error('O.S. já cancelada');
+    if (!order) throw new Error('O.S. nao encontrada');
+    if (order.status === 'CANCELADA') throw new Error('O.S. ja cancelada');
 
-    // Estorna estoque (inverte movimentos)
-    await this._reverseStockMovements(order, order.items);
+    const { count, error: movementError } = await supabase
+      .from('stock_movements')
+      .select('id', { count: 'exact', head: true })
+      .eq('reference_id', id);
+    if (movementError) {
+      throw new Error(`Erro ao validar movimentos de estoque: ${movementError.message}`);
+    }
+
+    // Estorna estoque somente se houve movimento
+    if ((count ?? 0) > 0) {
+      await this._reverseStockMovements(order, order.items);
+    }
+
+    // Estorna contas a receber
+    const { error: receivablesError } = await supabase
+      .from('accounts_receivable')
+      .delete()
+      .eq('order_id', id);
+    if (receivablesError) {
+      throw new Error(`Erro ao estornar recebiveis: ${receivablesError.message}`);
+    }
+
+    // Remove pagamentos da O.S.
+    const { error: paymentsError } = await supabase
+      .from('service_order_payments')
+      .delete()
+      .eq('order_id', id);
+    if (paymentsError) {
+      throw new Error(`Erro ao estornar pagamentos: ${paymentsError.message}`);
+    }
+
+    // Remove lancamentos de caixa vinculados
+    const { error: cashFlowError } = await supabase
+      .from('cash_flow_entries')
+      .delete()
+      .eq('reference_id', id);
+    if (cashFlowError) {
+      throw new Error(`Erro ao estornar caixa: ${cashFlowError.message}`);
+    }
+
+    // Remove delivery job se existir
+    const { error: deliveryError } = await supabase
+      .from('delivery_jobs')
+      .delete()
+      .eq('service_order_id', id);
+    if (deliveryError) {
+      throw new Error(`Erro ao remover delivery job: ${deliveryError.message}`);
+    }
 
     // Atualiza status
     const { data, error } = await supabase

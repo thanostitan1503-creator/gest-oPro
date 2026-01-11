@@ -11,16 +11,50 @@ export type Client = Database['public']['Tables']['clients']['Row'];
 export type NewClient = Database['public']['Tables']['clients']['Insert'];
 export type UpdateClient = Database['public']['Tables']['clients']['Update'];
 
+const normalizeTextValue = (value?: string | null) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+};
+
+const normalizeIdValue = (value?: string | null) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+};
+
+const buildFullAddress = (
+  street?: string | null,
+  neighborhood?: string | null,
+  fallback?: string | null
+) => {
+  const parts = [normalizeTextValue(street), normalizeTextValue(neighborhood)].filter(Boolean);
+  if (parts.length > 0) return parts.join(' - ');
+  return normalizeTextValue(fallback);
+};
+
+const buildClientPayload = <T extends NewClient | UpdateClient>(client: T): T => {
+  const street = normalizeTextValue(client.street_address);
+  const neighborhood = normalizeTextValue(client.neighborhood);
+  const address = buildFullAddress(street, neighborhood, client.address ?? null);
+
+  return {
+    ...client,
+    street_address: street,
+    neighborhood,
+    delivery_sector_id: normalizeIdValue(client.delivery_sector_id),
+    address,
+  };
+};
+
 export const clientService = {
   /**
-   * 1. Listar todos os clientes ativos
+   * 1. Listar clientes (ativos por padrao)
    */
-  async getAll(): Promise<Client[]> {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('is_active', true)
-      .order('name');
+  async getAll(options?: { includeInactive?: boolean }): Promise<Client[]> {
+    let query = supabase.from('clients').select('*');
+    if (!options?.includeInactive) {
+      query = query.eq('is_active', true);
+    }
+    const { data, error } = await query.order('name');
     
     if (error) throw new Error(`Erro ao listar clientes: ${error.message}`);
     return data || [];
@@ -65,9 +99,10 @@ export const clientService = {
    * 4. Criar cliente
    */
   async create(client: NewClient): Promise<Client> {
+    const payload = buildClientPayload(client);
     const { data, error } = await supabase
       .from('clients')
-      .insert(client as Database['public']['Tables']['clients']['Insert'])
+      .insert(payload as Database['public']['Tables']['clients']['Insert'])
       .select()
       .single();
 
@@ -79,9 +114,10 @@ export const clientService = {
    * 5. Atualizar cliente
    */
   async update(id: string, updates: UpdateClient): Promise<Client> {
+    const payload = buildClientPayload(updates);
     const { data, error } = await supabase
       .from('clients')
-      .update(updates as Database['public']['Tables']['clients']['Update'])
+      .update(payload as Database['public']['Tables']['clients']['Update'])
       .eq('id', id)
       .select()
       .single();
@@ -103,13 +139,24 @@ export const clientService = {
   },
 
   /**
+   * 6. Remover cliente permanentemente
+   */
+  async remove(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('clients')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`Erro ao remover cliente: ${error.message}`);
+  },
+
+  /**
    * 7. Buscar clientes por setor
    */
   async getBySector(sectorId: string): Promise<Client[]> {
     const { data, error } = await supabase
       .from('clients')
       .select('*')
-      .eq('sector_id', sectorId)
+      .eq('delivery_sector_id', sectorId)
       .eq('is_active', true)
       .order('name');
     

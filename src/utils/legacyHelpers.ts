@@ -814,8 +814,15 @@ export const listEmployees = async () => {
 
 // ==================== SERVICE ORDERS ====================
 
+const SERVICE_ORDER_FIELDS =
+  'id,order_number,deposit_id,client_id,client_name,client_phone,delivery_address,service_type,status,delivery_status,total,delivery_fee,created_at,completed_at' as const;
+const SERVICE_ORDER_ITEM_FIELDS =
+  'id,product_id,quantity,unit_price,modality,sale_movement_type' as const;
+
 export const getOrders = async () => {
-  const { data, error } = await supabase.from('service_orders').select('*');
+  const { data, error } = await supabase
+    .from('service_orders')
+    .select(`${SERVICE_ORDER_FIELDS},items:service_order_items(${SERVICE_ORDER_ITEM_FIELDS})`);
   if (error) throw error;
   return (data || []).map((o: any) => ({
     id: o.id,
@@ -830,8 +837,18 @@ export const getOrders = async () => {
     statusEntrega: o.delivery_status,
     total: o.total,
     delivery_fee: o.delivery_fee,
-    dataHoraCriacao: new Date(o.created_at).getTime(),
+    dataHoraCriacao: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
     dataHoraConclusao: o.completed_at ? new Date(o.completed_at).getTime() : undefined,
+    itens: (o.items || []).map((item: any) => ({
+      id: item.id,
+      produtoId: item.product_id,
+      quantidade: item.quantity,
+      precoUnitario: item.unit_price,
+      modalidade: item.modality ?? 'VENDA',
+      sale_movement_type: item.sale_movement_type ?? null,
+    })),
+    pagamentos: [],
+    historico: [],
   }));
 };
 

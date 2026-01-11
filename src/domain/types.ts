@@ -428,6 +428,9 @@ export interface Cliente {
   id: string;
   nome: string;
   endereco: string;
+  streetAddress?: string | null;
+  neighborhood?: string | null;
+  deliverySectorId?: string | null;
   referencia?: string;
   cpf?: string;
   dataNascimento?: string;

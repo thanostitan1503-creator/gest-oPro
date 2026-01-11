@@ -11,6 +11,9 @@ export * from './productService';
 export * from './stockService';
 export * from './serviceOrderService';
 export * from './clientService';
+export * from './clientDiscountService';
+export * from './clientPricingService';
+export * from './clientSpecialPriceService';
 export * from './financialService';
 export * from './deliveryService';
 export * from './employeeService'; // 👥 Serviço de colaboradores

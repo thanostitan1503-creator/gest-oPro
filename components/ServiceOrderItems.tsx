@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Trash2, HelpCircle, Package, RefreshCw, ShoppingBag, Info, X } from 'lucide-react';
 import { useLiveQuery, db } from '@/utils/legacyHelpers';
 import { resolvePrice, type PricingRow } from '@/utils/pricing';
+import type { ClientSpecialPriceMap } from '@/services';
 import { toast } from 'sonner';
+
+const EMPTY_SPECIAL_PRICES: ClientSpecialPriceMap = {};
 
 export interface OrderItem {
   id: string;
@@ -13,6 +16,8 @@ export interface OrderItem {
   quantidade: number;
   /** Modo de venda escolhido: EXCHANGE (troca) ou FULL (completa) */
   sale_movement_type?: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null;
+  priceSource?: 'AUTO' | 'CLIENT_SPECIAL' | 'MANUAL';
+  isManualPrice?: boolean;
 }
 
 /**
@@ -83,6 +88,7 @@ interface ServiceOrderItemsProps {
   includeProductIds?: string[];
   lockedProductIds?: string[];
   onRemoveItem?: (item: OrderItem) => void;
+  clientSpecialPrices?: ClientSpecialPriceMap;
 }
 
 export function ServiceOrderItems({
@@ -92,6 +98,7 @@ export function ServiceOrderItems({
   includeProductIds,
   lockedProductIds,
   onRemoveItem,
+  clientSpecialPrices,
 }: ServiceOrderItemsProps) {
   const [selectedProductId, setSelectedProductId] = useState('');
   const [quantity, setQuantity] = useState('1');
@@ -101,6 +108,22 @@ export function ServiceOrderItems({
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [pricingRows, setPricingRows] = useState<PricingRow[]>([]);
   const activeDepositId = selectedDepositId ?? null;
+  const activeSpecialPrices = clientSpecialPrices ?? EMPTY_SPECIAL_PRICES;
+
+  const formatMoney = (value: number) =>
+    value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const parseMoneyInput = (value: string) => {
+    if (!value) return 0;
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    const hasComma = trimmed.includes(',');
+    const normalized = hasComma
+      ? trimmed.replace(/\./g, '').replace(',', '.')
+      : trimmed.replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
 
   const loadPricing = async () => {
     try {
@@ -198,6 +221,27 @@ export function ServiceOrderItems({
     });
   };
 
+  const resolveUnitPriceForItem = (
+    productId: string,
+    saleMode: 'SIMPLE' | 'EXCHANGE' | 'FULL' | null,
+    depositId: string | null,
+    basePrice: number,
+    specials: ClientSpecialPriceMap
+  ) => {
+    const modeKey = (saleMode ?? 'SIMPLE').toUpperCase();
+    const resolvedDeposit = depositId ? depositId : 'GLOBAL';
+    const depKey = `${productId}:${modeKey}:${resolvedDeposit}`;
+    const globalKey = `${productId}:${modeKey}:GLOBAL`;
+
+    if (depKey in specials) {
+      return { unitPrice: specials[depKey], priceSource: 'CLIENT_SPECIAL' as const };
+    }
+    if (globalKey in specials) {
+      return { unitPrice: specials[globalKey], priceSource: 'CLIENT_SPECIAL' as const };
+    }
+    return { unitPrice: basePrice, priceSource: 'AUTO' as const };
+  };
+
   const handleAddItem = async () => {
     const product = productsById.get(selectedProductId);
     if (!product || !selectedDepositId) return;
@@ -219,18 +263,31 @@ export function ServiceOrderItems({
     const name = product.nome ?? product.name ?? '';
     const type = isServiceProduct(product) ? 'SERVICO' : product.tipo ?? product.type ?? '';
 
-    const unitPrice = resolveProductPrice(product.id, saleMode);
+    const basePrice = resolveProductPrice(product.id, saleMode);
+    const resolved = resolveUnitPriceForItem(
+      product.id,
+      saleMode,
+      activeDepositId,
+      basePrice,
+      activeSpecialPrices
+    );
 
     const existing = items.find((i) => i.produtoId === product.id && i.sale_movement_type === saleMode);
     if (existing) {
-      const resolved = resolveProductPrice(product.id, saleMode);
-      const displayUnit =
-        (existing.precoUnitario ?? 0) === 0 && resolved > 0
-          ? resolved
-          : (existing.precoUnitario ?? resolved);
+      const existingSource =
+        existing.priceSource ?? (existing.isManualPrice ? 'MANUAL' : resolved.priceSource);
+      const nextUnitPrice =
+        existingSource === 'MANUAL' ? existing.precoUnitario : resolved.unitPrice;
+      const nextSource = existingSource === 'MANUAL' ? 'MANUAL' : resolved.priceSource;
       const next = items.map((i) =>
         i.id === existing.id
-          ? { ...i, precoUnitario: displayUnit, quantidade: i.quantidade + qty }
+          ? {
+              ...i,
+              precoUnitario: nextUnitPrice,
+              quantidade: i.quantidade + qty,
+              priceSource: nextSource,
+              isManualPrice: nextSource === 'MANUAL',
+            }
           : i
       );
       setItems(next);
@@ -242,9 +299,11 @@ export function ServiceOrderItems({
         produtoId: product.id,
         nome: name,
         tipo: type,
-        precoUnitario: unitPrice,
+        precoUnitario: resolved.unitPrice,
         quantidade: qty,
         sale_movement_type: saleMode,
+        priceSource: resolved.priceSource,
+        isManualPrice: false,
       };
       setItems([...items, nextItem]);
       toast.success(`${modeInfo.emoji} ${name} adicionado (${modeInfo.label})`);
@@ -257,24 +316,89 @@ export function ServiceOrderItems({
   };
 
   useEffect(() => {
-    if (items.length === 0 || pricingRows.length === 0) return;
+    const hasSpecials = Object.keys(activeSpecialPrices).length > 0;
+    if (items.length === 0 || (!hasSpecials && pricingRows.length === 0)) return;
     let changed = false;
     const nextItems = items.map((item) => {
+      const currentSource =
+        item.priceSource ?? (item.isManualPrice ? 'MANUAL' : 'AUTO');
+      if (currentSource === 'MANUAL') return item;
       const product = productsById.get(item.produtoId);
       const inferredMode = item.sale_movement_type ?? resolveSaleMovementType(product);
-      const resolved = resolveProductPrice(item.produtoId, inferredMode);
-      const displayUnit =
-        (item.precoUnitario ?? 0) === 0 && resolved > 0
-          ? resolved
-          : (item.precoUnitario ?? resolved);
-      if (displayUnit !== item.precoUnitario) {
+      const basePrice = resolveProductPrice(item.produtoId, inferredMode);
+      const resolved = resolveUnitPriceForItem(
+        item.produtoId,
+        inferredMode,
+        activeDepositId,
+        basePrice,
+        activeSpecialPrices
+      );
+      if (
+        resolved.unitPrice !== item.precoUnitario ||
+        resolved.priceSource !== currentSource
+      ) {
         changed = true;
-        return { ...item, precoUnitario: displayUnit };
+        return {
+          ...item,
+          precoUnitario: resolved.unitPrice,
+          priceSource: resolved.priceSource,
+          isManualPrice: resolved.priceSource === 'MANUAL',
+        };
       }
       return item;
     });
     if (changed) setItems(nextItems);
-  }, [activeDepositId, items, pricingRows, productsById, resolveSaleMovementType, resolveProductPrice, setItems]);
+  }, [
+    activeDepositId,
+    activeSpecialPrices,
+    items,
+    pricingRows,
+    productsById,
+    resolveSaleMovementType,
+    resolveProductPrice,
+    setItems,
+  ]);
+
+  const handleUpdateUnitPrice = (itemId: string, rawValue: string) => {
+    const parsed = parseMoneyInput(rawValue);
+    const next = items.map((item) =>
+      item.id === itemId
+        ? {
+            ...item,
+            precoUnitario: parsed,
+            priceSource: 'MANUAL',
+            isManualPrice: true,
+          }
+        : item
+    );
+    setItems(next);
+  };
+
+  const handleRevertPrice = (itemId: string) => {
+    const item = items.find((entry) => entry.id === itemId);
+    if (!item) return;
+    const product = productsById.get(item.produtoId);
+    const inferredMode = item.sale_movement_type ?? resolveSaleMovementType(product);
+    const basePrice = resolveProductPrice(item.produtoId, inferredMode);
+    const resolved = resolveUnitPriceForItem(
+      item.produtoId,
+      inferredMode,
+      activeDepositId,
+      basePrice,
+      activeSpecialPrices
+    );
+    const next = items.map((entry) =>
+      entry.id === itemId
+        ? {
+            ...entry,
+            precoUnitario: resolved.unitPrice,
+            priceSource: resolved.priceSource,
+            isManualPrice: false,
+          }
+        : entry
+    );
+    setItems(next);
+  };
 
   /** Handler do modal - confirma escolha de modalidade */
   const handleSaleModeConfirm = async (mode: 'EXCHANGE' | 'FULL') => {
@@ -400,11 +524,20 @@ export function ServiceOrderItems({
                 const inferredMode = item.sale_movement_type ?? resolveSaleMovementType(product);
                 const modeKey = (inferredMode || 'SIMPLE') as keyof typeof SALE_MODE_INFO;
                 const modeInfo = SALE_MODE_INFO[modeKey] || SALE_MODE_INFO.SIMPLE;
-                const resolved = resolveProductPrice(item.produtoId, inferredMode);
+                const basePrice = resolveProductPrice(item.produtoId, inferredMode);
+                const resolved = resolveUnitPriceForItem(
+                  item.produtoId,
+                  inferredMode,
+                  activeDepositId,
+                  basePrice,
+                  activeSpecialPrices
+                );
+                const currentSource =
+                  item.priceSource ?? (item.isManualPrice ? 'MANUAL' : resolved.priceSource);
                 const displayUnit =
-                  (item.precoUnitario ?? 0) === 0 && resolved > 0
-                    ? resolved
-                    : (item.precoUnitario ?? resolved);
+                  currentSource === 'MANUAL'
+                    ? item.precoUnitario
+                    : (item.precoUnitario ?? resolved.unitPrice);
                 
                 return (
                   <tr key={item.id} className="border-t border-gray-200">
@@ -422,7 +555,43 @@ export function ServiceOrderItems({
                         {modeInfo.emoji} {modeInfo.label}
                       </span>
                     </td>
-                    <td className="px-2 py-2 font-medium">R$ {displayUnit.toFixed(2)}</td>
+                    <td className="px-2 py-2 font-medium">
+                      <div className="flex flex-col gap-1">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={formatMoney(displayUnit)}
+                          onChange={(e) => handleUpdateUnitPrice(item.id, e.target.value)}
+                          disabled={isLocked}
+                          className={`w-28 h-7 px-2 border border-gray-300 rounded text-sm ${
+                            isLocked ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''
+                          }`}
+                        />
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold">
+                          {currentSource === 'CLIENT_SPECIAL' && (
+                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-700">
+                              Preço especial
+                            </span>
+                          )}
+                          {currentSource === 'MANUAL' && (
+                            <>
+                              <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+                                Manual
+                              </span>
+                              {!isLocked && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevertPrice(item.id)}
+                                  className="text-blue-600 hover:text-blue-700"
+                                >
+                                  Reverter para automático
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-2 py-2">
                       <input
                         type="number"
@@ -457,8 +626,22 @@ export function ServiceOrderItems({
 
       {/* Modal de Seleção de Modalidade */}
       {showSaleModeModal && pendingProduct && (() => {
-        const precoTroca = resolveProductPrice(pendingProduct.id, 'EXCHANGE');
-        const precoCompleta = resolveProductPrice(pendingProduct.id, 'FULL');
+        const baseTroca = resolveProductPrice(pendingProduct.id, 'EXCHANGE');
+        const baseCompleta = resolveProductPrice(pendingProduct.id, 'FULL');
+        const precoTroca = resolveUnitPriceForItem(
+          pendingProduct.id,
+          'EXCHANGE',
+          activeDepositId,
+          baseTroca,
+          activeSpecialPrices
+        );
+        const precoCompleta = resolveUnitPriceForItem(
+          pendingProduct.id,
+          'FULL',
+          activeDepositId,
+          baseCompleta,
+          activeSpecialPrices
+        );
         
         return (
           <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4">
@@ -518,7 +701,7 @@ export function ServiceOrderItems({
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-black text-green-700">R$ {precoTroca.toFixed(2)}</div>
+                      <div className="text-2xl font-black text-green-700">R$ {precoTroca.unitPrice.toFixed(2)}</div>
                       <div className="text-xs text-green-600">por unidade</div>
                     </div>
                   </div>
@@ -547,7 +730,7 @@ export function ServiceOrderItems({
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-black text-blue-700">R$ {precoCompleta.toFixed(2)}</div>
+                      <div className="text-2xl font-black text-blue-700">R$ {precoCompleta.unitPrice.toFixed(2)}</div>
                       <div className="text-xs text-blue-600">por unidade</div>
                     </div>
                   </div>
